@@ -3,9 +3,14 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('YOUR_API_KEY')) {
-  console.error('ERROR CRÍTICO: Faltan las credenciales de Supabase en el archivo .env');
+// ✅ Verificación mejorada
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ ERROR CRÍTICO: Faltan las credenciales de Supabase');
+  console.error('URL:', supabaseUrl ? '✓' : '✗');
+  console.error('ANON_KEY:', supabaseAnonKey ? '✓' : '✗');
 }
+
+console.log('🔗 Conectando a Supabase:', supabaseUrl);
 
 export const supabase = createClient(
   supabaseUrl, 
@@ -14,25 +19,25 @@ export const supabase = createClient(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: window.localStorage,
     }
   }
 );
-/*
- import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// 🔍 TEST RÁPIDO
-(async () => {
-  const { data, error } = await supabase.from("profiles").select("*").limit(1);
-
-  if (error) {
-    console.error("❌ Error conectando a Supabase:", error);
-  } else {
-    console.log("✅ Conectado a Supabase:", data);
-  }
-})();
-  */
+// ✅ Test de conexión automático (solo en desarrollo)
+if (import.meta.env.DEV) {
+  (async () => {
+    try {
+      const { data, error } = await supabase.from("profiles").select("count").limit(1);
+      
+      if (error) {
+        console.error("❌ Error conectando a Supabase:", error.message);
+      } else {
+        console.log("✅ Conexión exitosa a Supabase");
+      }
+    } catch (err) {
+      console.error("❌ Error de red con Supabase:", err);
+    }
+  })();
+}
