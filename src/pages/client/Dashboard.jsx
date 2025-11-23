@@ -100,8 +100,8 @@ export default function ClientDashboard() {
 
   const handleInvestClick = () => {
     alert("Por favor envía el comprobante de tu pago al WhatsApp del administrador para procesar tu inversión adicional.");
-    // Cambia este número por el WhatsApp del administrador
-    window.open('https://wa.me/1234567890', '_blank');
+    // Cambia este número por el payapal del administrador
+    window.open('https://www.paypal.com/paypalme/admin_investpro', '_blank');
   };
 
   const handleWithdrawRequest = async (e) => {
