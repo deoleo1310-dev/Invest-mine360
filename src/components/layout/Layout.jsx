@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { LogOut, Users, DollarSign, PieChart } from 'lucide-react';
+import { LogOut, Users, DollarSign, TrendingUp } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export const Layout = ({ children }) => {
@@ -40,7 +40,7 @@ export const Layout = ({ children }) => {
           {/* Logo */}
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center text-primary shadow-sm">
-              <PieChart size={20} strokeWidth={2.5} />
+              <TrendingUp size={20} strokeWidth={2.5} />
             </div>
             <h1 className="text-xl font-bold text-white tracking-tight">InvestPro</h1>
           </div>
@@ -78,7 +78,7 @@ export const Layout = ({ children }) => {
       ) : (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-border flex justify-center items-center py-2 px-4 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
           <div className="flex items-center gap-2 text-primary font-medium">
-            <PieChart size={20} />
+            <TrendingUp size={20} />
             <span className="text-sm">Mi Inversión</span>
           </div>
         </nav>
