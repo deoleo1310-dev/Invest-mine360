@@ -8,6 +8,7 @@ import { Badge } from '../../components/ui/Badge';
 import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus } from 'lucide-react';
 import { differenceInWeeks, format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useToast } from '../../context/ToastContext';
 
 export default function ClientDashboard() {
   const { user } = useAuth();
@@ -16,7 +17,7 @@ export default function ClientDashboard() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
-  const [message, setMessage] = useState(null);
+  const { showSuccess, showError } = useToast();
 
   const loadData = async () => {
     if (!user) return;
@@ -104,42 +105,41 @@ export default function ClientDashboard() {
     window.open('https://www.paypal.com/paypalme/admin_investpro', '_blank');
   };
 
-  const handleWithdrawRequest = async (e) => {
-    e.preventDefault();
-    setMessage(null);
-    
-    const amount = Number(withdrawAmount);
-    
-    if (amount < 50) {
-      setMessage({ type: 'error', text: 'El retiro mínimo es de $50' });
-      return;
-    }
-    
-    if (amount > Number(availableAmount)) {
-      setMessage({ type: 'error', text: `Fondos insuficientes. Disponible: $${availableAmount}` });
-      return;
-    }
+ const handleWithdrawRequest = async (e) => {
+  e.preventDefault();
+  
+  const amount = Number(withdrawAmount);
+  
+  if (amount < 50) {
+    showError('El retiro mínimo es de $50');
+    return;
+  }
+  
+  if (amount > Number(availableAmount)) {
+    showError(`Fondos insuficientes. Disponible: $${availableAmount}`);
+    return;
+  }
 
-    setLoading(true);
-    try {
-      const { error } = await supabase.from('withdrawals').insert({
-        user_id: user.id,
-        monto: amount,
-        estado: 'pendiente'
-      });
+  setLoading(true);
+  try {
+    const { error } = await supabase.from('withdrawals').insert({
+      user_id: user.id,
+      monto: amount,
+      estado: 'pendiente'
+    });
 
-      if (error) throw error;
-      
-      setMessage({ type: 'success', text: '✅ Solicitud de retiro enviada. El administrador la revisará pronto.' });
-      setWithdrawAmount('');
-      loadData();
-    } catch (error) {
-      console.error(error);
-      setMessage({ type: 'error', text: 'Error al procesar la solicitud' });
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (error) throw error;
+    
+    showSuccess('✅ Solicitud de retiro enviada exitosamente');
+    setWithdrawAmount('');
+    loadData();
+  } catch (error) {
+    console.error(error);
+    showError('Error al procesar la solicitud: ' + error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (dataLoading) {
     return (
@@ -266,16 +266,7 @@ export default function ClientDashboard() {
                 max={availableAmount}
               />
               
-              {message && (
-                <div className={`p-3 rounded-lg text-sm ${
-                  message.type === 'error' 
-                    ? 'bg-status-error/10 text-status-error border border-status-error/20' 
-                    : 'bg-status-success/10 text-status-success border border-status-success/20'
-                }`}>
-                  {message.text}
-                </div>
-              )}
-
+             
               <Button 
                 type="submit" 
                 variant="success" 

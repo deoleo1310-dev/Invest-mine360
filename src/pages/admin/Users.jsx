@@ -8,6 +8,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Plus, Pencil, TrendingUp, Loader2 } from 'lucide-react';
 import { differenceInWeeks } from 'date-fns';
+import { useToast } from '../../context/ToastContext';
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
@@ -15,6 +16,8 @@ export default function AdminUsers() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const { showSuccess, showError } = useToast(); // Toast notificaticaciones
   
   const [formData, setFormData] = useState({
     full_name: '',
@@ -45,7 +48,7 @@ export default function AdminUsers() {
       setUsers(formattedUsers);
     } catch (error) {
       console.error("Error cargando usuarios:", error);
-      alert("Error al cargar usuarios: " + error.message);
+     showError("Error al cargar usuarios: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -154,7 +157,7 @@ export default function AdminUsers() {
           console.log('✅ Inversión creada');
         }
 
-        alert('Usuario actualizado exitosamente');
+       showSuccess('Usuario actualizado exitosamente');
       } else {
         console.log('➕ Creando nuevo usuario');
         
@@ -244,14 +247,14 @@ export default function AdminUsers() {
           tasa: formData.tasa_mensual
         });
 
-        alert(`Usuario creado exitosamente.\nEmail: ${formData.email}\nInversión: $${formData.inversion_actual}\nTasa: ${formData.tasa_mensual}%`);
+    showSuccess(`Usuario creado: ${formData.email}`);
       }
 
       setIsModalOpen(false);
       loadUsers(); // Recargar lista
     } catch (error) {
       console.error('❌ Error:', error);
-      alert(error.message || "Error al guardar");
+      showError(error.message || "Error al guardar");
     } finally {
       setActionLoading(false);
     }

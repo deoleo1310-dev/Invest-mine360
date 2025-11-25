@@ -4,14 +4,15 @@ import { useNavigate } from 'react-router-dom';
 import { TrendingUp, Loader2 } from 'lucide-react';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
+import { useToast } from '../context/ToastContext';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const { showError, showSuccess } = useToast();
 
   useEffect(() => {
     if (user && user.role) {
@@ -21,23 +22,24 @@ export default function Login() {
   }, [user, navigate]);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  e.preventDefault();
+  setLoading(true);
+  
+  try {
+    const data = await login(email, password);
     
-    try {
-      const data = await login(email, password);
-      
-      if (!data.session || !data.user) {
-        throw new Error('No se pudo iniciar sesión');
-      }
-      
-    } catch (err) {
-      console.error('❌ Error en handleSubmit:', err);
-      setError(err.message || 'Email o contraseña incorrectos');
-      setLoading(false);
+    if (!data.session || !data.user) {
+      throw new Error('No se pudo iniciar sesión');
     }
-  };
+    
+    showSuccess('¡Bienvenido a InvestPro!');
+    
+  } catch (err) {
+    console.error('❌ Error en handleSubmit:', err);
+    showError(err.message || 'Email o contraseña incorrectos');
+    setLoading(false);
+  }
+};
 
   if (authLoading) {
     return (
@@ -96,11 +98,7 @@ export default function Login() {
             />
           </div>
 
-          {error && (
-            <div className="p-3 bg-status-error/10 text-status-error text-sm rounded-lg border border-status-error/20">
-              {error}
-            </div>
-          )}
+        
 
           <button
             type="submit"
