@@ -101,7 +101,7 @@ export default function ClientDashboard() {
 
   const handleInvestClick = () => {
     alert("Por favor envía el comprobante de tu pago al WhatsApp del administrador para procesar tu inversión adicional.");
-    // Cambia este número por el payapal del administrador
+    // Cambia este link por el payapal del administrador
     window.open('https://www.paypal.com/paypalme/admin_investpro', '_blank');
   };
 

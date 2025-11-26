@@ -6,7 +6,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
-import { Plus, Pencil, TrendingUp, Loader2 } from 'lucide-react';
+import { Plus, Pencil, TrendingUp, Loader2, Eye, EyeOff, Lock, AlertCircle } from 'lucide-react';
 import { differenceInWeeks } from 'date-fns';
 import { useToast } from '../../context/ToastContext';
 
@@ -16,13 +16,15 @@ export default function AdminUsers() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
-
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { showSuccess, showError } = useToast(); // Toast notificaticaciones
   
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
     password: '',
+    confirmPassword: '', 
     inversion_actual: '',
     tasa_mensual: '',
     add_investment: ''
@@ -59,28 +61,30 @@ export default function AdminUsers() {
   }, []);
 
   const handleOpenModal = (user = null) => {
-    setEditingUser(user);
-    if (user) {
-      setFormData({
-        full_name: user.full_name,
-        email: user.email,
-        password: '',
-        inversion_actual: user.investment?.inversion_actual || 0,
-        tasa_mensual: user.investment?.tasa_mensual || 0,
-        add_investment: ''
-      });
-    } else {
-      setFormData({
-        full_name: '',
-        email: '',
-        password: '',
-        inversion_actual: '',
-        tasa_mensual: '',
-        add_investment: ''
-      });
-    }
-    setIsModalOpen(true);
-  };
+  setEditingUser(user);
+  if (user) {
+    setFormData({
+      full_name: user.full_name,
+      email: user.email,
+      password: '',              // ← Siempre vacío al editar
+      confirmPassword: '',       // ← Siempre vacío al editar
+      inversion_actual: user.investment?.inversion_actual || 0,
+      tasa_mensual: user.investment?.tasa_mensual || 0,
+      add_investment: ''
+    });
+  } else {
+    setFormData({
+      full_name: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      inversion_actual: '',
+      tasa_mensual: '',
+      add_investment: ''
+    });
+  }
+  setIsModalOpen(true);
+};
 
   // ✅ CÁLCULO SEMANAL DE GANANCIAS
   const calculateGain = (investment) => {
@@ -99,66 +103,119 @@ export default function AdminUsers() {
     
     return totalGain.toFixed(2);
   };
+// Función para resetear contraseña usando Edge Function
+const resetPassword = async (userId, newPassword) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      throw new Error('No hay sesión activa');
+    }
+    
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-reset-password`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId,
+          newPassword
+        })
+      }
+    );
 
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || 'Error al cambiar contraseña');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Error en resetPassword:', error);
+    throw error;
+  }
+};
   const handleSubmit = async (e) => {
     e.preventDefault();
     setActionLoading(true);
     
     try {
-      if (editingUser) {
-        console.log('✏️ Editando usuario:', editingUser.email);
-        
-        // --- MODO EDICIÓN ---
-        
-        // 1. Actualizar Perfil
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({ full_name: formData.full_name })
-          .eq('id', editingUser.id);
+   if (editingUser) {
+  console.log('✏️ Editando usuario:', editingUser.email);
+  
+  // --- MODO EDICIÓN ---
+  
+  // 1. Actualizar Perfil
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ full_name: formData.full_name })
+    .eq('id', editingUser.id);
 
-        if (profileError) {
-          console.error('Error actualizando perfil:', profileError);
-          throw profileError;
-        }
+  if (profileError) {
+    console.error('Error actualizando perfil:', profileError);
+    throw profileError;
+  }
 
-        // 2. Actualizar/Crear Inversión
-        let newInvestmentAmount = Number(formData.inversion_actual);
-        
-        // ✅ Si hay monto adicional, SUMARLO
-        if (formData.add_investment && Number(formData.add_investment) > 0) {
-          newInvestmentAmount += Number(formData.add_investment);
-          console.log('💰 Aumentando inversión en:', formData.add_investment);
-        }
+  // 2. 🔐 Cambiar contraseña si se proporcionó
+  if (formData.password) {
+    // Validar que las contraseñas coincidan
+    if (formData.password !== formData.confirmPassword) {
+      throw new Error('Las contraseñas no coinciden');
+    }
+    
+    if (formData.password.length < 6) {
+      throw new Error('La contraseña debe tener al menos 6 caracteres');
+    }
+    
+    try {
+      await resetPassword(editingUser.id, formData.password);
+      showSuccess('✓ Contraseña actualizada correctamente');
+    } catch (pwdError) {
+      console.error('Error cambiando contraseña:', pwdError);
+      showError('Error al cambiar contraseña: ' + pwdError.message);
+      // No lanzamos error para que continúe con el resto
+    }
+  }
 
-        if (editingUser.investment) {
-          // Actualizar inversión existente
-          const { error: updateInvError } = await supabase
-            .from('investments')
-            .update({
-              inversion_actual: newInvestmentAmount,
-              tasa_mensual: Number(formData.tasa_mensual),
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', editingUser.investment.id);
+  // 3. Actualizar/Crear Inversión
+  let newInvestmentAmount = Number(formData.inversion_actual);
+  
+  if (formData.add_investment && Number(formData.add_investment) > 0) {
+    newInvestmentAmount += Number(formData.add_investment);
+    console.log('💰 Aumentando inversión en:', formData.add_investment);
+  }
 
-          if (updateInvError) throw updateInvError;
-          console.log('✅ Inversión actualizada');
-        } else {
-          // Crear inversión si no existe
-          const { error: createInvError } = await supabase
-            .from('investments')
-            .insert({
-              user_id: editingUser.id,
-              inversion_actual: newInvestmentAmount,
-              tasa_mensual: Number(formData.tasa_mensual)
-            });
+  if (editingUser.investment) {
+    const { error: updateInvError } = await supabase
+      .from('investments')
+      .update({
+        inversion_actual: newInvestmentAmount,
+        tasa_mensual: Number(formData.tasa_mensual),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', editingUser.investment.id);
 
-          if (createInvError) throw createInvError;
-          console.log('✅ Inversión creada');
-        }
+    if (updateInvError) throw updateInvError;
+    console.log('✅ Inversión actualizada');
+  } else {
+    const { error: createInvError } = await supabase
+      .from('investments')
+      .insert({
+        user_id: editingUser.id,
+        inversion_actual: newInvestmentAmount,
+        tasa_mensual: Number(formData.tasa_mensual)
+      });
 
-       showSuccess('Usuario actualizado exitosamente');
-      } else {
+    if (createInvError) throw createInvError;
+    console.log('✅ Inversión creada');
+  }
+
+  showSuccess('Usuario actualizado exitosamente');
+} else {
         console.log('➕ Creando nuevo usuario');
         
         // --- MODO CREACIÓN ---
@@ -338,18 +395,77 @@ export default function AdminUsers() {
             disabled={!!editingUser}
             placeholder="juan@example.com"
           />
-          
-          {!editingUser && (
-            <Input 
-              label="Contraseña"
-              type="password"
-              value={formData.password}
-              onChange={e => setFormData({...formData, password: e.target.value})}
-              required
-              placeholder="Mínimo 6 caracteres"
-            />
-          )}
-          
+
+{/* 🔐 NUEVA SECCIÓN DE CONTRASEÑA */}
+<div className="space-y-4 border-t pt-4">
+  <div className="flex items-center gap-2 text-sm text-neutral-gray">
+    <Lock size={16} />
+    <span className="font-medium">
+      {editingUser ? 'Cambiar Contraseña (Opcional)' : 'Contraseña *'}
+    </span>
+  </div>
+
+  {/* Campo Contraseña */}
+  <div>
+    <label className="text-sm font-medium text-neutral-gray block mb-2">
+      Nueva Contraseña
+    </label>
+    <div className="relative">
+      <input
+        type={showPassword ? "text" : "password"}
+        value={formData.password}
+        onChange={e => setFormData({...formData, password: e.target.value})}
+        placeholder={editingUser ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"}
+        className="w-full px-4 py-2.5 pr-10 rounded-lg border border-neutral-border focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+      />
+      <button
+        type="button"
+        onClick={() => setShowPassword(!showPassword)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-gray hover:text-primary"
+      >
+        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
+  </div>
+
+  {/* Campo Confirmar Contraseña - Solo si hay algo en password */}
+  {(formData.password || !editingUser) && (
+    <div>
+      <label className="text-sm font-medium text-neutral-gray block mb-2">
+        Confirmar Contraseña {!editingUser && '*'}
+      </label>
+      <div className="relative">
+        <input
+          type={showConfirmPassword ? "text" : "password"}
+          value={formData.confirmPassword}
+          onChange={e => setFormData({...formData, confirmPassword: e.target.value})}
+          placeholder="Repetir contraseña"
+          className="w-full px-4 py-2.5 pr-10 rounded-lg border border-neutral-border focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-gray hover:text-primary"
+        >
+          {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+      {formData.password !== formData.confirmPassword && formData.confirmPassword && (
+        <p className="text-xs text-red-500 mt-1">Las contraseñas no coinciden</p>
+      )}
+    </div>
+  )}
+
+  {/* Alerta de seguridad */}
+  {editingUser && formData.password && (
+    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2">
+      <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={18} />
+      <p className="text-xs text-amber-800">
+        La contraseña se cambiará inmediatamente. El usuario deberá usar la nueva contraseña en su próximo inicio de sesión.
+      </p>
+    </div>
+  )}
+</div>
           <div className="grid grid-cols-2 gap-4">
             <Input 
               label="Inversión Inicial ($)"

@@ -32,8 +32,7 @@ export default function Login() {
       throw new Error('No se pudo iniciar sesión');
     }
     
-    showSuccess('¡Bienvenido a InvestPro!');
-    
+  
   } catch (err) {
     console.error('❌ Error en handleSubmit:', err);
     showError(err.message || 'Email o contraseña incorrectos');
@@ -59,7 +58,7 @@ export default function Login() {
         <div className="w-20 h-20 bg-primary rounded-3xl flex items-center justify-center text-white shadow-lg mx-auto mb-4">
           <TrendingUp size={40} strokeWidth={2.5} />
         </div>
-        <h1 className="text-3xl font-bold text-neutral-text mb-2">InvestPro</h1>
+        <h1 className="text-3xl font-bold text-neutral-text mb-2">Mine360pr</h1>
         <p className="text-neutral-gray">Tu plataforma de inversiones</p>
       </div>
 
@@ -119,7 +118,7 @@ export default function Login() {
 
       {/* Footer */}
       <footer className="mt-8 text-neutral-gray text-sm">
-        © 2025 InvestPro. Todos los derechos reservados.
+        © 2025 Mine360pr. Todos los derechos reservados.
       </footer>
     </div>
   );
