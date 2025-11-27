@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import { Card } from '../../components/ui/Card';
@@ -8,140 +8,303 @@ import { Badge } from '../../components/ui/Badge';
 import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus } from 'lucide-react';
 import { differenceInWeeks, format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useToast } from '../../context/ToastContext';
 
+// ============================================
+// CACHÉ MEJORADO CON REQUEST DEDUPLICATION
+// ============================================
+class DataCache {
+  constructor(ttl = 30000) {
+    this.cache = new Map();
+    this.pendingRequests = new Map();
+    this.ttl = ttl;
+  }
+
+  get(key) {
+    const cached = this.cache.get(key);
+    if (!cached) return null;
+    
+    if (Date.now() - cached.timestamp > this.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return cached.data;
+  }
+
+  set(key, data) {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  }
+
+  // Previene múltiples llamadas simultáneas al mismo recurso
+  async getOrFetch(key, fetchFn) {
+    // Si hay datos en caché y son válidos, retornarlos
+    const cached = this.get(key);
+    if (cached) {
+      console.log('✅ Cache hit for:', key);
+      return cached;
+    }
+
+    // Si ya hay una petición en curso, esperar por ella
+    if (this.pendingRequests.has(key)) {
+      console.log('⏳ Awaiting pending request for:', key);
+      return this.pendingRequests.get(key);
+    }
+
+    // Crear nueva petición
+    console.log('🔄 Fetching fresh data for:', key);
+    const promise = fetchFn()
+      .then(data => {
+        this.set(key, data);
+        this.pendingRequests.delete(key);
+        return data;
+      })
+      .catch(err => {
+        this.pendingRequests.delete(key);
+        throw err;
+      });
+
+    this.pendingRequests.set(key, promise);
+    return promise;
+  }
+
+  invalidate(key) {
+    this.cache.delete(key);
+    this.pendingRequests.delete(key);
+    console.log('🗑️ Cache invalidated for:', key);
+  }
+
+  clear() {
+    this.cache.clear();
+    this.pendingRequests.clear();
+    console.log('🗑️ Cache cleared');
+  }
+}
+
+// Instancia global del caché (30 segundos de TTL)
+const clientCache = new DataCache(30000);
+
+// ============================================
+// FUNCIÓN AUXILIAR: Calcular Ganancias (Memoizable)
+// ============================================
+const calculateGain = (investment, withdrawals) => {
+  if (!investment?.inversion_actual || !investment?.tasa_mensual) {
+    return { total: 0, weeks: 0, weeklyRate: 0, weeklyGain: 0 };
+  }
+  
+  const weeks = differenceInWeeks(new Date(), new Date(investment.created_at)) || 0;
+  const weeklyRate = investment.tasa_mensual / 4;
+  const weeklyGain = investment.inversion_actual * (weeklyRate / 100);
+  const totalGain = weeklyGain * weeks;
+  
+  const paidWithdrawals = (withdrawals || [])
+    .filter(w => w.estado === 'pagado')
+    .reduce((acc, curr) => acc + Number(curr.monto), 0);
+  
+  return {
+    total: Math.max(0, totalGain - paidWithdrawals).toFixed(2),
+    weeks,
+    weeklyRate: weeklyRate.toFixed(2),
+    weeklyGain: weeklyGain.toFixed(2)
+  };
+};
+
+// ============================================
+// COMPONENTE PRINCIPAL OPTIMIZADO
+// ============================================
 export default function ClientDashboard() {
   const { user } = useAuth();
+  const { showSuccess, showError } = useToast();
+  
+  // Estados
+  const [withdrawAmount, setWithdrawAmount] = useState('');
   const [investment, setInvestment] = useState(null);
   const [withdrawals, setWithdrawals] = useState([]);
-  const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [dataLoading, setDataLoading] = useState(true);
-  const [message, setMessage] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  
+  // Refs para control de ciclo de vida y cancelación
+  const isMountedRef = useRef(true);
+  const abortControllerRef = useRef(null);
 
-  const loadData = async () => {
-    if (!user) return;
-    
-    try {
-      setDataLoading(true);
-      console.log('📊 Cargando datos del cliente...');
-      
-      // Get Investment
-      const { data: invData, error: invError } = await supabase
-        .from('investments')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      
-      if (invError) {
-        console.error('Error cargando inversión:', invError);
-      } else {
-        console.log('✅ Inversión cargada:', invData);
-        setInvestment(invData);
-      }
-
-      // Get Withdrawals
-      const { data: wData, error: wError } = await supabase
-        .from('withdrawals')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('fecha_solicitud', { ascending: false });
-      
-      if (wError) {
-        console.error('Error cargando retiros:', wError);
-      } else {
-        setWithdrawals(wData || []);
-      }
-    } catch (error) {
-      console.error("Error loading client data:", error);
-    } finally {
-      setDataLoading(false);
+  // ============================================
+  // FETCH OPTIMIZADO: Usa caché y deduplicación
+  // ============================================
+  const fetchClientData = useCallback(async (userId) => {
+    // Cancela cualquier petición anterior en curso
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
-  };
+    
+    abortControllerRef.current = new AbortController();
 
+    // Usa el caché con deduplicación
+    return clientCache.getOrFetch(userId, async () => {
+      // Consultas en paralelo para máxima eficiencia
+      const [invResult, wdResult] = await Promise.all([
+        supabase
+          .from('investments')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle(),
+        
+        supabase
+          .from('withdrawals')
+          .select('*')
+          .eq('user_id', userId)
+          .order('fecha_solicitud', { ascending: false })
+      ]);
+
+      // Manejo de errores sin bloquear la UI
+      if (invResult.error) {
+        console.error('⚠️ Error cargando inversión:', invResult.error);
+      }
+      if (wdResult.error) {
+        console.error('⚠️ Error cargando retiros:', wdResult.error);
+      }
+
+      return {
+        investment: invResult.data,
+        withdrawals: wdResult.data || []
+      };
+    });
+  }, []); // Sin dependencias = función estable
+
+  // ============================================
+  // EFECTO: Carga inicial de datos
+  // ============================================
   useEffect(() => {
-    loadData();
-  }, [user]);
+    if (!user?.id) return;
 
-  // ✅ CÁLCULO SEMANAL DE GANANCIAS
-  const calculateGain = () => {
-    if (!investment || !investment.inversion_actual || !investment.tasa_mensual) {
-      return { total: 0, weeks: 0, weeklyRate: 0, weeklyGain: 0 };
-    }
-    
-    // Semanas transcurridas desde la creación de la inversión
-    const weeks = differenceInWeeks(new Date(), new Date(investment.created_at)) || 0;
-    
-    // Tasa semanal = tasa mensual / 4
-    const weeklyRate = (investment.tasa_mensual / 4);
-    
-    // Ganancia semanal = inversión * (tasa semanal / 100)
-    const weeklyGain = investment.inversion_actual * (weeklyRate / 100);
-    
-    // Ganancia total acumulada = ganancia semanal * semanas
-    const totalGain = weeklyGain * weeks;
-    
-    // Restar retiros pagados
-    const paidWithdrawals = withdrawals
-      .filter(w => w.estado === 'pagado')
-      .reduce((acc, curr) => acc + Number(curr.monto), 0);
-    
-    const availableGain = Math.max(0, totalGain - paidWithdrawals);
-    
-    return {
-      total: availableGain.toFixed(2),
-      weeks,
-      weeklyRate: weeklyRate.toFixed(2),
-      weeklyGain: weeklyGain.toFixed(2)
+    let mounted = true;
+
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const data = await fetchClientData(user.id);
+        
+        if (mounted) {
+          setInvestment(data.investment);
+          setWithdrawals(data.withdrawals);
+          console.log('✅ Datos cargados correctamente');
+        }
+      } catch (error) {
+        if (mounted && error.name !== 'AbortError') {
+          console.error('❌ Error al cargar datos:', error);
+          showError('Error al cargar datos. Por favor, recarga la página.');
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
     };
-  };
 
-  const gainInfo = calculateGain();
-  const availableAmount = gainInfo.total;
+    loadData();
 
-  const handleInvestClick = () => {
-    alert("Por favor envía el comprobante de tu pago al WhatsApp del administrador para procesar tu inversión adicional.");
-    // Cambia este número por el payapal del administrador
-    window.open('https://www.paypal.com/paypalme/admin_investpro', '_blank');
-  };
+    // Cleanup: previene actualizaciones después de desmontar
+    return () => {
+      mounted = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [user?.id, fetchClientData, showError]);
 
+  // ============================================
+  // MEMOIZACIÓN: Evita recalcular en cada render
+  // ============================================
+  const gainInfo = useMemo(() => 
+    calculateGain(investment, withdrawals), 
+    [investment, withdrawals]
+  );
+
+  // ============================================
+  // HANDLER: Solicitar Retiro (con UI Optimista)
+  // ============================================
   const handleWithdrawRequest = async (e) => {
     e.preventDefault();
-    setMessage(null);
     
     const amount = Number(withdrawAmount);
-    
+
+    // Validaciones
     if (amount < 50) {
-      setMessage({ type: 'error', text: 'El retiro mínimo es de $50' });
+      showError('El retiro mínimo es de $50');
       return;
     }
     
-    if (amount > Number(availableAmount)) {
-      setMessage({ type: 'error', text: `Fondos insuficientes. Disponible: $${availableAmount}` });
+    if (amount > Number(gainInfo.total)) {
+      showError(`Fondos insuficientes. Disponible: $${gainInfo.total}`);
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
+
+    // UI Optimista: Actualiza la UI inmediatamente
+    const optimisticWithdrawal = {
+      id: 'temp-' + Date.now(),
+      user_id: user.id,
+      monto: amount,
+      estado: 'pendiente',
+      fecha_solicitud: new Date().toISOString()
+    };
+
+    setWithdrawals(prev => [optimisticWithdrawal, ...prev]);
+    setWithdrawAmount('');
+
     try {
-      const { error } = await supabase.from('withdrawals').insert({
-        user_id: user.id,
-        monto: amount,
-        estado: 'pendiente'
-      });
+      console.log('💰 Solicitando retiro de $', amount);
+      
+      const { data, error } = await supabase
+        .from('withdrawals')
+        .insert({
+          user_id: user.id,
+          monto: amount,
+          estado: 'pendiente'
+        })
+        .select()
+        .single();
 
       if (error) throw error;
       
-      setMessage({ type: 'success', text: '✅ Solicitud de retiro enviada. El administrador la revisará pronto.' });
-      setWithdrawAmount('');
-      loadData();
+      console.log('✅ Retiro creado exitosamente:', data.id);
+
+      // Reemplaza el registro temporal con el real del servidor
+      setWithdrawals(prev => 
+        prev.map(w => w.id === optimisticWithdrawal.id ? data : w)
+      );
+
+      // Invalida el caché para forzar una actualización fresca en la próxima carga
+      clientCache.invalidate(user.id);
+      
+      showSuccess('✅ Solicitud de retiro enviada exitosamente');
+      
     } catch (error) {
-      console.error(error);
-      setMessage({ type: 'error', text: 'Error al procesar la solicitud' });
+      console.error('❌ Error al solicitar retiro:', error);
+      
+      // Revierte el cambio optimista en caso de error
+      setWithdrawals(prev => 
+        prev.filter(w => w.id !== optimisticWithdrawal.id)
+      );
+      
+      showError('Error al procesar la solicitud: ' + error.message);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  if (dataLoading) {
+  // ============================================
+  // HANDLER: Invertir Más
+  // ============================================
+  const handleInvestClick = useCallback(() => {
+    alert("Por favor envía el comprobante de tu pago al WhatsApp del administrador.");
+    window.open('https://www.paypal.com/paypalme/admin_investpro', '_blank');
+  }, []);
+
+  // ============================================
+  // RENDER: Estado de Carga
+  // ============================================
+  if (loading) {
     return (
       <div className="flex justify-center items-center min-h-[60vh]">
         <div className="text-center">
@@ -152,7 +315,9 @@ export default function ClientDashboard() {
     );
   }
 
-  // Si no tiene inversión
+  // ============================================
+  // RENDER: Sin Inversión
+  // ============================================
   if (!investment) {
     return (
       <div className="max-w-2xl mx-auto text-center py-20">
@@ -169,6 +334,9 @@ export default function ClientDashboard() {
     );
   }
 
+  // ============================================
+  // RENDER: Dashboard Principal
+  // ============================================
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* Header Stats */}
@@ -182,7 +350,6 @@ export default function ClientDashboard() {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Card 1: Inversión Actual */}
           <Card className="bg-gradient-to-br from-primary to-primary-dark text-white border-none">
             <p className="text-primary-light text-sm mb-1">Inversión Actual</p>
             <h3 className="text-3xl font-bold mb-2">
@@ -197,7 +364,6 @@ export default function ClientDashboard() {
             </p>
           </Card>
 
-          {/* Card 2: Ganancia Semanal */}
           <Card className="bg-gradient-to-br from-green-500 to-green-700 text-white border-none">
             <p className="text-green-100 text-sm mb-1">Ganancia por Semana</p>
             <h3 className="text-3xl font-bold mb-2">
@@ -208,11 +374,10 @@ export default function ClientDashboard() {
             </p>
           </Card>
 
-          {/* Card 3: Total Disponible */}
           <Card className="border-2 border-status-success">
             <p className="text-neutral-gray text-sm mb-1">💰 Disponible para Retiro</p>
             <h3 className="text-3xl font-bold text-status-success mb-2">
-              ${availableAmount}
+              ${gainInfo.total}
             </h3>
             <p className="text-xs text-neutral-gray">
               Acumulado en {gainInfo.weeks} semanas
@@ -220,7 +385,6 @@ export default function ClientDashboard() {
           </Card>
         </div>
 
-        {/* Botón de Inversión Adicional */}
         <Card className="mt-4 bg-primary-light/20 border-primary-light">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
@@ -240,18 +404,17 @@ export default function ClientDashboard() {
 
       {/* Withdraw Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Request Form */}
         <section className="lg:col-span-1">
           <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-primary-light/50">
             <h3 className="font-bold text-primary-dark mb-4 flex items-center gap-2">
               <DollarSign size={20} /> Solicitar Retiro
             </h3>
             
-            <form onSubmit={handleWithdrawRequest} className="space-y-4">
+            <div className="space-y-4">
               <div className="bg-white p-4 rounded-lg border border-primary-light/50 shadow-sm">
                 <p className="text-xs text-neutral-gray mb-1">Disponible</p>
                 <p className="text-2xl font-bold text-status-success">
-                  ${availableAmount}
+                  ${gainInfo.total}
                 </p>
               </div>
 
@@ -263,26 +426,17 @@ export default function ClientDashboard() {
                 value={withdrawAmount}
                 onChange={e => setWithdrawAmount(e.target.value)}
                 min="50"
-                max={availableAmount}
+                max={gainInfo.total}
+                disabled={submitting}
               />
               
-              {message && (
-                <div className={`p-3 rounded-lg text-sm ${
-                  message.type === 'error' 
-                    ? 'bg-status-error/10 text-status-error border border-status-error/20' 
-                    : 'bg-status-success/10 text-status-success border border-status-success/20'
-                }`}>
-                  {message.text}
-                </div>
-              )}
-
               <Button 
-                type="submit" 
+                onClick={handleWithdrawRequest}
                 variant="success" 
                 className="w-full" 
-                disabled={loading || Number(availableAmount) < 50}
+                disabled={submitting || Number(gainInfo.total) < 50}
               >
-                {loading ? (
+                {submitting ? (
                   <>
                     <Loader2 className="animate-spin" size={18} />
                     <span>Procesando...</span>
@@ -292,16 +446,15 @@ export default function ClientDashboard() {
                 )}
               </Button>
               
-              {Number(availableAmount) < 50 && (
+              {Number(gainInfo.total) < 50 && (
                 <p className="text-xs text-neutral-gray text-center">
                   Necesitas al menos $50 para retirar
                 </p>
               )}
-            </form>
+            </div>
           </Card>
         </section>
 
-        {/* History */}
         <section className="lg:col-span-2">
           <h3 className="font-bold text-neutral-text mb-4 flex items-center gap-2">
             <Clock size={20} /> Historial de Retiros

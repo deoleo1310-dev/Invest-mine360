@@ -4,11 +4,13 @@ import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Check, X, Loader2 } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
 
 export default function AdminWithdrawals() {
   const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('pendiente');
+  const { showSuccess, showError } = useToast();
 
   const loadData = async () => {
     try {
@@ -33,18 +35,20 @@ export default function AdminWithdrawals() {
   }, []);
 
   const handleAction = async (id, status) => {
-    try {
-        await supabase.from('withdrawals').update({ 
-            estado: status,
-            fecha_procesado: new Date().toISOString()
-        }).eq('id', id);
-        
-        loadData();
-    } catch (error) {
-        console.error("Error updating withdrawal:", error);
-        alert("Error al actualizar el estado");
-    }
-  };
+  try {
+    await supabase.from('withdrawals').update({ 
+      estado: status,
+      fecha_procesado: new Date().toISOString()
+    }).eq('id', id);
+    
+    const statusText = status === 'pagado' ? 'aprobado' : 'rechazado';
+    showSuccess(`Retiro ${statusText} exitosamente`);
+    loadData();
+  } catch (error) {
+    console.error("Error updating withdrawal:", error);
+    showError("Error al actualizar el estado");
+  }
+};
 
   const filteredWithdrawals = filter === 'todos' 
     ? withdrawals 

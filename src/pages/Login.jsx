@@ -4,14 +4,15 @@ import { useNavigate } from 'react-router-dom';
 import { TrendingUp, Loader2 } from 'lucide-react';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
+import { useToast } from '../context/ToastContext';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const { showError, showSuccess } = useToast();
 
   useEffect(() => {
     if (user && user.role) {
@@ -21,23 +22,23 @@ export default function Login() {
   }, [user, navigate]);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  e.preventDefault();
+  setLoading(true);
+  
+  try {
+    const data = await login(email, password);
     
-    try {
-      const data = await login(email, password);
-      
-      if (!data.session || !data.user) {
-        throw new Error('No se pudo iniciar sesión');
-      }
-      
-    } catch (err) {
-      console.error('❌ Error en handleSubmit:', err);
-      setError(err.message || 'Email o contraseña incorrectos');
-      setLoading(false);
+    if (!data.session || !data.user) {
+      throw new Error('No se pudo iniciar sesión');
     }
-  };
+    
+  
+  } catch (err) {
+    console.error('❌ Error en handleSubmit:', err);
+    showError(err.message || 'Email o contraseña incorrectos');
+    setLoading(false);
+  }
+};
 
   if (authLoading) {
     return (
@@ -57,7 +58,7 @@ export default function Login() {
         <div className="w-20 h-20 bg-primary rounded-3xl flex items-center justify-center text-white shadow-lg mx-auto mb-4">
           <TrendingUp size={40} strokeWidth={2.5} />
         </div>
-        <h1 className="text-3xl font-bold text-neutral-text mb-2">InvestPro</h1>
+        <h1 className="text-3xl font-bold text-neutral-text mb-2">Mine360pr</h1>
         <p className="text-neutral-gray">Tu plataforma de inversiones</p>
       </div>
 
@@ -96,11 +97,7 @@ export default function Login() {
             />
           </div>
 
-          {error && (
-            <div className="p-3 bg-status-error/10 text-status-error text-sm rounded-lg border border-status-error/20">
-              {error}
-            </div>
-          )}
+        
 
           <button
             type="submit"
@@ -121,7 +118,7 @@ export default function Login() {
 
       {/* Footer */}
       <footer className="mt-8 text-neutral-gray text-sm">
-        © 2025 InvestPro. Todos los derechos reservados.
+        © 2025 Mine360pr. Todos los derechos reservados.
       </footer>
     </div>
   );

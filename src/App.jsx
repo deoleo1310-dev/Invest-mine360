@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext'; // ← NUEVO
 import { Layout } from './components/layout/Layout';
 import Login from './pages/Login';
 import AdminUsers from './pages/admin/Users';
@@ -35,39 +36,35 @@ const ProtectedRoute = ({ children, role }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Login */}
-          <Route path="/login" element={<Login />} />
-          
-          {/* Admin Routes */}
-          <Route path="/admin" element={
-            <ProtectedRoute role="admin">
-              <AdminUsers />
-            </ProtectedRoute>
-          } />
-          <Route path="/admin/withdrawals" element={
-            <ProtectedRoute role="admin">
-              <AdminWithdrawals />
-            </ProtectedRoute>
-          } />
+    <ToastProvider> {/* ← ENVUELVE TODO CON ToastProvider */}
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            
+            <Route path="/admin" element={
+              <ProtectedRoute role="admin">
+                <AdminUsers />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/withdrawals" element={
+              <ProtectedRoute role="admin">
+                <AdminWithdrawals />
+              </ProtectedRoute>
+            } />
 
-          {/* Client Routes - Una sola ruta */}
-          <Route path="/client" element={
-            <ProtectedRoute role="cliente">
-              <ClientDashboard />
-            </ProtectedRoute>
-          } />
-          
-          {/* Redireccionamiento por defecto */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          
-          {/* 404 - Redirigir al login */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+            <Route path="/client" element={
+              <ProtectedRoute role="cliente">
+                <ClientDashboard />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 
