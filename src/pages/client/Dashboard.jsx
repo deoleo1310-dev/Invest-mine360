@@ -41,18 +41,18 @@ class DataCache {
     // Si hay datos en caché y son válidos, retornarlos
     const cached = this.get(key);
     if (cached) {
-      console.log('✅ Cache hit for:', key);
+      console.log('✅ Caché encontrado para:', key);
       return cached;
     }
 
     // Si ya hay una petición en curso, esperar por ella
     if (this.pendingRequests.has(key)) {
-      console.log('⏳ Awaiting pending request for:', key);
+      console.log('Esperando la petición pendiente para:', key);
       return this.pendingRequests.get(key);
     }
 
     // Crear nueva petición
-    console.log('🔄 Fetching fresh data for:', key);
+    console.log('🔄 Obteniendo datos actualizados para:', key);
     const promise = fetchFn()
       .then(data => {
         this.set(key, data);
@@ -71,13 +71,13 @@ class DataCache {
   invalidate(key) {
     this.cache.delete(key);
     this.pendingRequests.delete(key);
-    console.log('🗑️ Cache invalidated for:', key);
+    console.log('Caché invalidada para:', key);
   }
 
   clear() {
     this.cache.clear();
     this.pendingRequests.clear();
-    console.log('🗑️ Cache cleared');
+    console.log('🗑️ Caché limpiada');
   }
 }
 
