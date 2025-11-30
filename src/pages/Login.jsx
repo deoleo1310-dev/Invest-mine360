@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { TrendingUp, Loader2 } from 'lucide-react';
-import { Input } from '../components/ui/Input';
-import { Button } from '../components/ui/Button';
 import { useToast } from '../context/ToastContext';
 
 export default function Login() {
@@ -35,7 +33,7 @@ export default function Login() {
   
   } catch (err) {
     console.error('❌ Error en handleSubmit:', err);
-    showError(err.message || 'Email o contraseña incorrectos');
+    showError('Credenciales incorrectas. Revisa tu email y tu contraseña.'); //o poner err.message para ver el error real
     setLoading(false);
   }
 };
