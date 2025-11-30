@@ -41,7 +41,7 @@ const calculateUserBalance = async (userId, excludeWithdrawalId = null) => {
 
     return Math.max(0, totalEarnings - paidWithdrawals - pendingWithdrawals);
   } catch (error) {
-    console.error('Error calculando balance:', error);
+  
     return null;
   }
 };
@@ -71,7 +71,7 @@ export default function AdminWithdrawals() {
       // Los calculamos on-demand cuando se intenta aprobar
       setUserBalances({});
     } catch (error) {
-      console.error('Error cargando retiros:', error);
+    
       showError('Error al cargar retiros');
     } finally {
       setLoading(false);
@@ -124,7 +124,7 @@ export default function AdminWithdrawals() {
       showSuccess(`✅ Pago de ${requested.toFixed(2)} aprobado`);
       await loadData();
     } catch (error) {
-      console.error('Error aprobando:', error);
+     
       showError('Error al aprobar: ' + error.message);
     } finally {
       setActionLoading(prev => {
@@ -156,7 +156,7 @@ export default function AdminWithdrawals() {
       showInfo(`Retiro de $${withdrawal.monto} rechazado`);
       await loadData();
     } catch (error) {
-      console.error('Error rechazando:', error);
+   
       showError('Error: ' + error.message);
     } finally {
       setActionLoading(prev => {

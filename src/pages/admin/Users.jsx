@@ -49,7 +49,6 @@ export default function AdminUsers() {
           .rpc('get_user_total_earnings', { p_user_id: user.id });
         
         if (earningsError) {
-          console.warn(`Error calculando ganancias para ${user.email}:`, earningsError);
         }
         
         return {
@@ -62,10 +61,10 @@ export default function AdminUsers() {
       })
     );
     
-    console.log('👥 Usuarios cargados con ganancias:', usersWithEarnings);
+ 
     setUsers(usersWithEarnings);
   } catch (error) {
-    console.error("Error cargando usuarios:", error);
+   
     showError("Error al cargar usuarios: " + error.message);
   } finally {
     setLoading(false);

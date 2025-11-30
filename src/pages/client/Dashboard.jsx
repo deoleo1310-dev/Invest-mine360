@@ -39,16 +39,16 @@ class DataCache {
   async getOrFetch(key, fetchFn) {
     const cached = this.get(key);
     if (cached) {
-      console.log('✅ Caché encontrado para:', key);
+    
       return cached;
     }
 
     if (this.pendingRequests.has(key)) {
-      console.log('⏸️ Esperando petición pendiente para:', key);
+     
       return this.pendingRequests.get(key);
     }
 
-    console.log('🔄 Obteniendo datos actualizados para:', key);
+
     const promise = fetchFn()
       .then(data => {
         this.set(key, data);
@@ -165,10 +165,10 @@ export default function ClientDashboard() {
       ]);
 
       if (invResult.error) {
-        console.error('⚠️ Error cargando inversión:', invResult.error);
+      
       }
       if (wdResult.error) {
-        console.error('⚠️ Error cargando retiros:', wdResult.error);
+    
       }
 
       return {
@@ -295,7 +295,7 @@ export default function ClientDashboard() {
       );
       
     } catch (error) {
-      console.error('❌ Error al solicitar retiro:', error);
+     
       
       // Revierte el cambio optimista
       setWithdrawals(prev => 

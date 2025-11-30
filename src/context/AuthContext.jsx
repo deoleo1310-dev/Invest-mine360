@@ -48,11 +48,11 @@ export const AuthProvider = ({ children }) => {
     getSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔔 Auth State Change:', event);
+    
       
-      // ✅ IGNORAR eventos que no cambian el estado real
+      // IGNORAR eventos que no cambian el estado real
       if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-        console.log('⏭️ Ignorando', event);
+      
         return;
       }
       
@@ -69,13 +69,12 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  // ✅ CACHE DE 1 SEGUNDO: Previene fetches duplicados
+  // CACHE DE 1 SEGUNDO: Previene fetches duplicados
   const fetchProfile = useCallback(async (authUser) => {
     const now = Date.now();
     
     // Si ya se hizo fetch hace menos de 1 segundo, ignorar
     if (now - lastFetchTime.current < 1000) {
-      console.log('⏸️ Fetch muy reciente, ignorando...');
       return;
     }
 
@@ -97,9 +96,8 @@ export const AuthProvider = ({ children }) => {
         .single();
 
       if (error) {
-        console.error('❌ Error al obtener perfil:', error.message);
         
-        // ✅ FALLBACK: Crear perfil si no existe
+        //  FALLBACK: Crear perfil si no existe
         if (error.code === 'PGRST116') {
           
           
@@ -115,10 +113,10 @@ export const AuthProvider = ({ children }) => {
             .single();
 
           if (!createError && newProfile) {
-            console.log('✅ Perfil creado:', newProfile.role);
+          
             setUser({ ...authUser, ...newProfile });
           } else {
-            console.error('❌ Error creando perfil:', createError);
+            
             setUser({ 
               ...authUser, 
               role: 'cliente',
@@ -138,7 +136,7 @@ export const AuthProvider = ({ children }) => {
         setUser({ ...authUser, ...profile });
       }
     } catch (error) {
-      console.error('❌ Excepción en fetchProfile:', error);
+    
       setUser({ 
         ...authUser, 
         role: 'cliente',
@@ -152,7 +150,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      console.log('🔐 Intentando login con:', email);
+    
       setLoading(true);
       
       const { data, error } = await supabase.auth.signInWithPassword({ 
@@ -166,7 +164,6 @@ export const AuthProvider = ({ children }) => {
         throw error;
       }
       
-      console.log('✅ Login exitoso');
       return data;
     } catch (error) {
       

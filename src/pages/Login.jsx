@@ -32,7 +32,6 @@ export default function Login() {
     
   
   } catch (err) {
-    console.error('❌ Error en handleSubmit:', err);
     showError('Credenciales incorrectas. Revisa tu email y tu contraseña.'); //o poner err.message para ver el error real
     setLoading(false);
   }

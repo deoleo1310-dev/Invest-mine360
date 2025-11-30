@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('ANON_KEY:', supabaseAnonKey ? '✓' : '✗');
 }
 
-console.log('🔗 Conectando a Supabase:', supabaseUrl);
+
 
 export const supabase = createClient(
   supabaseUrl, 
@@ -25,19 +25,3 @@ export const supabase = createClient(
   }
 );
 
-// ✅ Test de conexión automático (solo en desarrollo)
-if (import.meta.env.DEV) {
-  (async () => {
-    try {
-      const { data, error } = await supabase.from("profiles").select("count").limit(1);
-      
-      if (error) {
-        console.error("❌ Error conectando a Supabase:", error.message);
-      } else {
-        console.log("✅ Conexión exitosa a Supabase");
-      }
-    } catch (err) {
-      console.error("❌ Error de red con Supabase:", err);
-    }
-  })();
-}
