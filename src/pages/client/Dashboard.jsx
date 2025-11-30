@@ -5,13 +5,13 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus } from 'lucide-react';
+import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus, AlertTriangle } from 'lucide-react';
 import { differenceInWeeks, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useToast } from '../../context/ToastContext';
 
 // ============================================
-// CACHÉ MEJORADO CON REQUEST DEDUPLICATION
+// CACHÉ MEJORADO
 // ============================================
 class DataCache {
   constructor(ttl = 30000) {
@@ -36,22 +36,18 @@ class DataCache {
     this.cache.set(key, { data, timestamp: Date.now() });
   }
 
-  // Previene múltiples llamadas simultáneas al mismo recurso
   async getOrFetch(key, fetchFn) {
-    // Si hay datos en caché y son válidos, retornarlos
     const cached = this.get(key);
     if (cached) {
       console.log('✅ Caché encontrado para:', key);
       return cached;
     }
 
-    // Si ya hay una petición en curso, esperar por ella
     if (this.pendingRequests.has(key)) {
-      console.log('Esperando la petición pendiente para:', key);
+      console.log('⏸️ Esperando petición pendiente para:', key);
       return this.pendingRequests.get(key);
     }
 
-    // Crear nueva petición
     console.log('🔄 Obteniendo datos actualizados para:', key);
     const promise = fetchFn()
       .then(data => {
@@ -71,38 +67,56 @@ class DataCache {
   invalidate(key) {
     this.cache.delete(key);
     this.pendingRequests.delete(key);
-    console.log('Caché invalidada para:', key);
   }
 
   clear() {
     this.cache.clear();
     this.pendingRequests.clear();
-    console.log('🗑️ Caché limpiada');
   }
 }
 
-// Instancia global del caché (30 segundos de TTL)
 const clientCache = new DataCache(30000);
 
 // ============================================
-// FUNCIÓN AUXILIAR: Calcular Ganancias (Memoizable)
+// ✅ FUNCIÓN CORREGIDA: Calcular Fondos Disponibles
 // ============================================
-const calculateGain = (investment, withdrawals) => {
+const calculateAvailableFunds = (investment, withdrawals) => {
   if (!investment?.inversion_actual || !investment?.tasa_mensual) {
-    return { total: 0, weeks: 0, weeklyRate: 0, weeklyGain: 0 };
+    return {
+      totalEarnings: 0,
+      paidWithdrawals: 0,
+      pendingWithdrawals: 0,
+      availableBalance: 0,
+      weeks: 0,
+      weeklyRate: 0,
+      weeklyGain: 0
+    };
   }
   
+  // Calcular ganancias totales
   const weeks = differenceInWeeks(new Date(), new Date(investment.created_at)) || 0;
   const weeklyRate = investment.tasa_mensual / 4;
   const weeklyGain = investment.inversion_actual * (weeklyRate / 100);
-  const totalGain = weeklyGain * weeks;
+  const totalEarnings = weeklyGain * weeks;
   
+  // Calcular retiros PAGADOS
   const paidWithdrawals = (withdrawals || [])
     .filter(w => w.estado === 'pagado')
     .reduce((acc, curr) => acc + Number(curr.monto), 0);
   
+  // ⚠️ NUEVO: Calcular retiros PENDIENTES (fondos reservados)
+  const pendingWithdrawals = (withdrawals || [])
+    .filter(w => w.estado === 'pendiente')
+    .reduce((acc, curr) => acc + Number(curr.monto), 0);
+  
+  // ✅ Balance disponible = Total - Pagados - Pendientes
+  const availableBalance = Math.max(0, totalEarnings - paidWithdrawals - pendingWithdrawals);
+  
   return {
-    total: Math.max(0, totalGain - paidWithdrawals).toFixed(2),
+    totalEarnings: totalEarnings.toFixed(2),
+    paidWithdrawals: paidWithdrawals.toFixed(2),
+    pendingWithdrawals: pendingWithdrawals.toFixed(2),
+    availableBalance: availableBalance.toFixed(2),
     weeks,
     weeklyRate: weeklyRate.toFixed(2),
     weeklyGain: weeklyGain.toFixed(2)
@@ -110,37 +124,32 @@ const calculateGain = (investment, withdrawals) => {
 };
 
 // ============================================
-// COMPONENTE PRINCIPAL OPTIMIZADO
+// COMPONENTE PRINCIPAL
 // ============================================
 export default function ClientDashboard() {
   const { user } = useAuth();
-  const { showSuccess, showError } = useToast();
+  const { showSuccess, showError, showInfo } = useToast();
   
-  // Estados
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [investment, setInvestment] = useState(null);
   const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
-  // Refs para control de ciclo de vida y cancelación
   const isMountedRef = useRef(true);
   const abortControllerRef = useRef(null);
 
   // ============================================
-  // FETCH OPTIMIZADO: Usa caché y deduplicación
+  // FETCH OPTIMIZADO
   // ============================================
   const fetchClientData = useCallback(async (userId) => {
-    // Cancela cualquier petición anterior en curso
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     
     abortControllerRef.current = new AbortController();
 
-    // Usa el caché con deduplicación
     return clientCache.getOrFetch(userId, async () => {
-      // Consultas en paralelo para máxima eficiencia
       const [invResult, wdResult] = await Promise.all([
         supabase
           .from('investments')
@@ -155,7 +164,6 @@ export default function ClientDashboard() {
           .order('fecha_solicitud', { ascending: false })
       ]);
 
-      // Manejo de errores sin bloquear la UI
       if (invResult.error) {
         console.error('⚠️ Error cargando inversión:', invResult.error);
       }
@@ -168,10 +176,10 @@ export default function ClientDashboard() {
         withdrawals: wdResult.data || []
       };
     });
-  }, []); // Sin dependencias = función estable
+  }, []);
 
   // ============================================
-  // EFECTO: Carga inicial de datos
+  // EFECTO: Carga inicial
   // ============================================
   useEffect(() => {
     if (!user?.id) return;
@@ -202,7 +210,6 @@ export default function ClientDashboard() {
 
     loadData();
 
-    // Cleanup: previene actualizaciones después de desmontar
     return () => {
       mounted = false;
       if (abortControllerRef.current) {
@@ -212,35 +219,43 @@ export default function ClientDashboard() {
   }, [user?.id, fetchClientData, showError]);
 
   // ============================================
-  // MEMOIZACIÓN: Evita recalcular en cada render
+  // MEMOIZACIÓN: Calcular fondos
   // ============================================
-  const gainInfo = useMemo(() => 
-    calculateGain(investment, withdrawals), 
+  const funds = useMemo(() => 
+    calculateAvailableFunds(investment, withdrawals), 
     [investment, withdrawals]
   );
 
   // ============================================
-  // HANDLER: Solicitar Retiro (con UI Optimista)
+  // 🔒 HANDLER: Solicitar Retiro (CON VALIDACIÓN)
   // ============================================
   const handleWithdrawRequest = async (e) => {
     e.preventDefault();
     
     const amount = Number(withdrawAmount);
+    const available = Number(funds.availableBalance);
 
-    // Validaciones
+    // ✅ VALIDACIÓN 1: Monto mínimo
     if (amount < 50) {
       showError('El retiro mínimo es de $50');
       return;
     }
     
-    if (amount > Number(gainInfo.total)) {
-      showError(`Fondos insuficientes. Disponible: $${gainInfo.total}`);
+    // ✅ VALIDACIÓN 2: Fondos suficientes
+    if (amount > available) {
+      showError(
+        `Fondos insuficientes.\n\n` +
+        `Disponible: $${available}\n` +
+        (Number(funds.pendingWithdrawals) > 0 
+          ? `(Tienes $${funds.pendingWithdrawals} en retiros pendientes)` 
+          : '')
+      );
       return;
     }
 
     setSubmitting(true);
 
-    // UI Optimista: Actualiza la UI inmediatamente
+    // UI Optimista: Actualiza inmediatamente
     const optimisticWithdrawal = {
       id: 'temp-' + Date.now(),
       user_id: user.id,
@@ -269,20 +284,22 @@ export default function ClientDashboard() {
       
       console.log('✅ Retiro creado exitosamente:', data.id);
 
-      // Reemplaza el registro temporal con el real del servidor
+      // Reemplaza el temporal con el real
       setWithdrawals(prev => 
         prev.map(w => w.id === optimisticWithdrawal.id ? data : w)
       );
 
-      // Invalida el caché para forzar una actualización fresca en la próxima carga
       clientCache.invalidate(user.id);
       
-      showSuccess('✅ Solicitud de retiro enviada exitosamente');
+      showSuccess(
+        `✅ Retiro de $${amount} solicitado exitosamente\n` +
+        `Nuevo balance disponible: $${(available - amount).toFixed(2)}`
+      );
       
     } catch (error) {
       console.error('❌ Error al solicitar retiro:', error);
       
-      // Revierte el cambio optimista en caso de error
+      // Revierte el cambio optimista
       setWithdrawals(prev => 
         prev.filter(w => w.id !== optimisticWithdrawal.id)
       );
@@ -297,9 +314,9 @@ export default function ClientDashboard() {
   // HANDLER: Invertir Más
   // ============================================
   const handleInvestClick = useCallback(() => {
-    alert("Por favor envía el comprobante de tu pago al WhatsApp del administrador.");
-    window.open('https://www.paypal.com/paypalme/admin_investpro', '_blank');
-  }, []);
+    showInfo("Contacta al administrador para agregar más fondos");
+    window.open('https://wa.me/1234567890?text=Quiero%20aumentar%20mi%20inversión', '_blank');
+  }, [showInfo]);
 
   // ============================================
   // RENDER: Estado de Carga
@@ -345,11 +362,12 @@ export default function ClientDashboard() {
           <h2 className="text-2xl font-bold text-primary-dark">Mi Inversión</h2>
           <div className="flex items-center gap-2 text-sm text-neutral-gray bg-white px-3 py-2 rounded-lg shadow-sm">
             <Calendar size={16} />
-            <span>{gainInfo.weeks} semanas activas</span>
+            <span>{funds.weeks} semanas activas</span>
           </div>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Card 1: Inversión */}
           <Card className="bg-gradient-to-br from-primary to-primary-dark text-white border-none">
             <p className="text-primary-light text-sm mb-1">Inversión Actual</p>
             <h3 className="text-3xl font-bold mb-2">
@@ -357,34 +375,56 @@ export default function ClientDashboard() {
             </h3>
             <div className="flex items-center gap-2 text-sm bg-white/10 w-fit px-2 py-1 rounded mt-2">
               <TrendingUp size={16} />
-              <span>{gainInfo.weeklyRate}% Semanal</span>
+              <span>{funds.weeklyRate}% Semanal</span>
             </div>
             <p className="text-xs text-white/70 mt-2">
               ({investment.tasa_mensual}% mensual)
             </p>
           </Card>
 
+          {/* Card 2: Ganancia Semanal */}
           <Card className="bg-gradient-to-br from-green-500 to-green-700 text-white border-none">
             <p className="text-green-100 text-sm mb-1">Ganancia por Semana</p>
             <h3 className="text-3xl font-bold mb-2">
-              ${gainInfo.weeklyGain}
+              ${funds.weeklyGain}
             </h3>
-            <p className="text-xs text-white/80">
-              Calculado automáticamente cada semana
+            <p className="text-xs text-white/80 mt-2">
+              Total acumulado: ${funds.totalEarnings}
             </p>
           </Card>
 
-          <Card className="border-2 border-status-success">
+          {/* Card 3: Disponible CON ALERTAS */}
+          <Card className={`border-2 ${
+            Number(funds.pendingWithdrawals) > 0 
+              ? 'border-amber-400 bg-amber-50' 
+              : 'border-status-success'
+          }`}>
             <p className="text-neutral-gray text-sm mb-1">💰 Disponible para Retiro</p>
-            <h3 className="text-3xl font-bold text-status-success mb-2">
-              ${gainInfo.total}
+            <h3 className={`text-3xl font-bold mb-2 ${
+              Number(funds.pendingWithdrawals) > 0 
+                ? 'text-amber-600' 
+                : 'text-status-success'
+            }`}>
+              ${funds.availableBalance}
             </h3>
-            <p className="text-xs text-neutral-gray">
-              Acumulado en {gainInfo.weeks} semanas
+            
+            {/* ⚠️ ALERTA: Fondos Reservados */}
+            {Number(funds.pendingWithdrawals) > 0 && (
+              <div className="flex items-start gap-2 mt-2 p-2 bg-amber-100 rounded-lg border border-amber-300">
+                <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800">
+                  <strong>${funds.pendingWithdrawals}</strong> en retiros pendientes
+                </p>
+              </div>
+            )}
+            
+            <p className="text-xs text-neutral-gray mt-2">
+              Retiros pagados: ${funds.paidWithdrawals}
             </p>
           </Card>
         </div>
 
+        {/* CTA Invertir Más */}
         <Card className="mt-4 bg-primary-light/20 border-primary-light">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
@@ -410,12 +450,18 @@ export default function ClientDashboard() {
               <DollarSign size={20} /> Solicitar Retiro
             </h3>
             
-            <div className="space-y-4">
+            <form onSubmit={handleWithdrawRequest} className="space-y-4">
+              {/* Balance Display */}
               <div className="bg-white p-4 rounded-lg border border-primary-light/50 shadow-sm">
                 <p className="text-xs text-neutral-gray mb-1">Disponible</p>
                 <p className="text-2xl font-bold text-status-success">
-                  ${gainInfo.total}
+                  ${funds.availableBalance}
                 </p>
+                {Number(funds.pendingWithdrawals) > 0 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    (${funds.pendingWithdrawals} reservados)
+                  </p>
+                )}
               </div>
 
               <Input 
@@ -426,15 +472,15 @@ export default function ClientDashboard() {
                 value={withdrawAmount}
                 onChange={e => setWithdrawAmount(e.target.value)}
                 min="50"
-                max={gainInfo.total}
-                disabled={submitting}
+                max={funds.availableBalance}
+                disabled={submitting || Number(funds.availableBalance) < 50}
               />
               
               <Button 
-                onClick={handleWithdrawRequest}
+                type="submit"
                 variant="success" 
                 className="w-full" 
-                disabled={submitting || Number(gainInfo.total) < 50}
+                disabled={submitting || Number(funds.availableBalance) < 50}
               >
                 {submitting ? (
                   <>
@@ -446,15 +492,16 @@ export default function ClientDashboard() {
                 )}
               </Button>
               
-              {Number(gainInfo.total) < 50 && (
+              {Number(funds.availableBalance) < 50 && (
                 <p className="text-xs text-neutral-gray text-center">
                   Necesitas al menos $50 para retirar
                 </p>
               )}
-            </div>
+            </form>
           </Card>
         </section>
 
+        {/* Historial */}
         <section className="lg:col-span-2">
           <h3 className="font-bold text-neutral-text mb-4 flex items-center gap-2">
             <Clock size={20} /> Historial de Retiros
