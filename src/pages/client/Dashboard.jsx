@@ -314,9 +314,9 @@ export default function ClientDashboard() {
   // HANDLER: Invertir Más
   // ============================================
   const handleInvestClick = useCallback(() => {
-    showInfo("Contacta al administrador para agregar más fondos");
-    window.open('https://wa.me/1234567890?text=Quiero%20aumentar%20mi%20inversión', '_blank');
-  }, [showInfo]);
+    alert("Por favor enviar el comprobante de pago al WhatsApp del administrador, para que proceda con la actualización de su inversión en la app");
+    window.open('https://www.paypal.com/paypalme/DevonBrantPierre2025', '_blank');
+  }, []);
 
   // ============================================
   // RENDER: Estado de Carga

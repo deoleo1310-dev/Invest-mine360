@@ -1,5 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,50 +6,17 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Manejar preflight CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 1. Verificar autorización
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       throw new Error('No authorization header')
     }
 
-    // 2. Crear cliente admin con service role
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
-
-    // 3. Verificar que el usuario es admin
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
-    
-    if (userError || !user) {
-      throw new Error('Invalid token')
-    }
-
-    // 4. Verificar rol de admin en la tabla profiles
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || profile?.role !== 'admin') {
-      throw new Error('Unauthorized: Admin access required')
-    }
-
-    // 5. Obtener datos del request
+    // Usar fetch directo a la Admin API
     const { userId, newPassword } = await req.json()
 
     if (!userId || !newPassword) {
@@ -61,18 +27,26 @@ serve(async (req) => {
       throw new Error('Password must be at least 6 characters')
     }
 
-    // 6. Actualizar contraseña usando Admin API
-    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
-      userId,
-      { password: newPassword }
+    // Llamada directa a Admin API usando service_role_key
+    const response = await fetch(
+      `${Deno.env.get('SUPABASE_URL')}/auth/v1/admin/users/${userId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          'Content-Type': 'application/json',
+          'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+        },
+        body: JSON.stringify({ password: newPassword })
+      }
     )
 
-    if (error) {
-      console.error('Error updating password:', error)
-      throw error
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to update password')
     }
 
-    console.log('Password updated successfully for user:', userId)
+    const data = await response.json()
 
     return new Response(
       JSON.stringify({ 

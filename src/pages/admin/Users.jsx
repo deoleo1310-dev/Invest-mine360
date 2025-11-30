@@ -30,31 +30,48 @@ export default function AdminUsers() {
     add_investment: ''
   });
 
-  const loadUsers = async () => {
-    try {
-      setLoading(true);
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*, investments(*)')
-        .eq('role', 'cliente')
-        .order('created_at', { ascending: false });
+ const loadUsers = async () => {
+  try {
+    setLoading(true);
+    
+    // 1. Obtener perfiles con inversiones
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('*, investments(*)')
+      .eq('role', 'cliente')
+      .order('created_at', { ascending: false });
 
-      if (profilesError) throw profilesError;
-      
-      const formattedUsers = profiles.map(p => ({
-        ...p,
-        investment: p.investments?.[0] || null
-      }));
-      
-      console.log('👥 Usuarios cargados:', formattedUsers);
-      setUsers(formattedUsers);
-    } catch (error) {
-      console.error("Error cargando usuarios:", error);
-     showError("Error al cargar usuarios: " + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (profilesError) throw profilesError;
+    
+    // 2. Calcular ganancias en el servidor para cada usuario
+    const usersWithEarnings = await Promise.all(
+      profiles.map(async (user) => {
+        const { data: earnings, error: earningsError } = await supabase
+          .rpc('get_user_total_earnings', { p_user_id: user.id });
+        
+        if (earningsError) {
+          console.warn(`Error calculando ganancias para ${user.email}:`, earningsError);
+        }
+        
+        return {
+          ...user,
+          investment: user.investments?.[0] || null,
+          totalEarnings: earnings?.[0]?.total_earnings || 0,
+          weeksCount: earnings?.[0]?.weeks_count || 0,
+          weeklyRate: earnings?.[0]?.weekly_rate || 0
+        };
+      })
+    );
+    
+    console.log('👥 Usuarios cargados con ganancias:', usersWithEarnings);
+    setUsers(usersWithEarnings);
+  } catch (error) {
+    console.error("Error cargando usuarios:", error);
+    showError("Error al cargar usuarios: " + error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     loadUsers();
@@ -86,23 +103,6 @@ export default function AdminUsers() {
   setIsModalOpen(true);
 };
 
-  // ✅ CÁLCULO SEMANAL DE GANANCIAS
-  const calculateGain = (investment) => {
-    if (!investment || !investment.inversion_actual || !investment.tasa_mensual) {
-      return 0;
-    }
-    
-    // Calcular semanas transcurridas desde la creación
-    const weeks = differenceInWeeks(new Date(), new Date(investment.created_at)) || 0;
-    
-    // Tasa semanal = tasa mensual / 4
-    const weeklyRate = investment.tasa_mensual / 4;
-    
-    // Ganancia total = inversión * (tasa semanal / 100) * semanas
-    const totalGain = investment.inversion_actual * (weeklyRate / 100) * weeks;
-    
-    return totalGain.toFixed(2);
-  };
 // Función para resetear contraseña usando Edge Function
 const resetPassword = async (userId, newPassword) => {
   try {
@@ -362,10 +362,20 @@ const resetPassword = async (userId, newPassword) => {
                   </Badge>
                 </div>
                 
-                <div className="flex items-center gap-2 text-status-success font-medium bg-status-success/5 p-2 rounded-lg">
-                  <TrendingUp size={16} />
-                  <span>Ganancia semanal acumulada: ${calculateGain(user.investment)}</span>
-                </div>
+               <div className="flex items-center gap-2 text-status-success font-medium bg-status-success/5 p-2 rounded-lg">
+  <TrendingUp size={16} />
+  <span>
+    Ganancia semanal acumulada: ${Number(user.totalEarnings || 0).toLocaleString('es-DO', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}
+  </span>
+  {user.weeksCount > 0 && (
+    <span className="text-xs text-neutral-gray ml-2">
+      ({user.weeksCount} semanas × {user.weeklyRate}%)
+    </span>
+  )}
+</div>
               </div>
             </Card>
           ))}
