@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 const AuthContext = createContext();
@@ -6,7 +6,17 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const isFetching = useRef(false); // Prevenir llamadas duplicadas
+  const isFetching = useRef(false);
+  const lastFetchTime = useRef(0); // ✅ Previene fetches duplicados
+
+  // ✅ DEBOUNCE: Evita llamadas múltiples en <300ms
+  const debounce = (fn, delay) => {
+    let timeoutId;
+    return (...args) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => fn(...args), delay);
+    };
+  };
 
   useEffect(() => {
    
@@ -38,10 +48,11 @@ export const AuthProvider = ({ children }) => {
     getSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔔 Auth State Change:', event);
       
-      
-      // Ignorar TOKEN_REFRESHED para evitar llamadas duplicadas
-      if (event === 'TOKEN_REFRESHED') {
+      // ✅ IGNORAR eventos que no cambian el estado real
+      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        console.log('⏭️ Ignorando', event);
         return;
       }
       
@@ -58,14 +69,23 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  const fetchProfile = async (authUser) => {
-    // Prevenir llamadas simultáneas
+  // ✅ CACHE DE 1 SEGUNDO: Previene fetches duplicados
+  const fetchProfile = useCallback(async (authUser) => {
+    const now = Date.now();
+    
+    // Si ya se hizo fetch hace menos de 1 segundo, ignorar
+    if (now - lastFetchTime.current < 1000) {
+      console.log('⏸️ Fetch muy reciente, ignorando...');
+      return;
+    }
+
     if (isFetching.current) {
       
       return;
     }
 
     isFetching.current = true;
+    lastFetchTime.current = now;
     
     try {
      
@@ -77,9 +97,9 @@ export const AuthProvider = ({ children }) => {
         .single();
 
       if (error) {
-    
+        console.error('❌ Error al obtener perfil:', error.message);
         
-        // Si el perfil no existe, crearlo
+        // ✅ FALLBACK: Crear perfil si no existe
         if (error.code === 'PGRST116') {
           
           
@@ -94,21 +114,19 @@ export const AuthProvider = ({ children }) => {
             .select()
             .single();
 
-          if (createError) {
-           
-            // Usar datos básicos si falla
+          if (!createError && newProfile) {
+            console.log('✅ Perfil creado:', newProfile.role);
+            setUser({ ...authUser, ...newProfile });
+          } else {
+            console.error('❌ Error creando perfil:', createError);
             setUser({ 
               ...authUser, 
               role: 'cliente',
               full_name: authUser.email.split('@')[0]
             });
-          } else {
-            
-            setUser({ ...authUser, ...newProfile });
           }
         } else {
-          // Otro tipo de error, usar datos básicos
-          
+          // Otro error, usar datos básicos
           setUser({ 
             ...authUser, 
             role: 'cliente',
@@ -120,8 +138,7 @@ export const AuthProvider = ({ children }) => {
         setUser({ ...authUser, ...profile });
       }
     } catch (error) {
-      
-      // Fallback: establecer usuario con datos básicos
+      console.error('❌ Excepción en fetchProfile:', error);
       setUser({ 
         ...authUser, 
         role: 'cliente',
@@ -131,12 +148,12 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
       isFetching.current = false;
     }
-  };
+  }, []);
 
   const login = async (email, password) => {
     try {
-     
-      setLoading(true); // Activar loading
+      console.log('🔐 Intentando login con:', email);
+      setLoading(true);
       
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
@@ -149,8 +166,7 @@ export const AuthProvider = ({ children }) => {
         throw error;
       }
       
-     
-      // El loading se desactiva en fetchProfile
+      console.log('✅ Login exitoso');
       return data;
     } catch (error) {
       
@@ -164,12 +180,6 @@ export const AuthProvider = ({ children }) => {
     await supabase.auth.signOut();
     setUser(null);
   };
-
-  useEffect(() => {
-    if (user) {
-      
-    }
-  }, [user]);
 
   return (
     <AuthContext.Provider value={{ 
