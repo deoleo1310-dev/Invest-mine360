@@ -46,10 +46,10 @@ export default function AdminUsers() {
         investment: p.investments?.[0] || null
       }));
       
-      console.log('👥 Usuarios cargados:', formattedUsers);
+     
       setUsers(formattedUsers);
     } catch (error) {
-      console.error("Error cargando usuarios:", error);
+      
      showError("Error al cargar usuarios: " + error.message);
     } finally {
       setLoading(false);
@@ -135,7 +135,6 @@ const resetPassword = async (userId, newPassword) => {
 
     return result;
   } catch (error) {
-    console.error('Error en resetPassword:', error);
     throw error;
   }
 };
@@ -145,7 +144,7 @@ const resetPassword = async (userId, newPassword) => {
     
     try {
    if (editingUser) {
-  console.log('✏️ Editando usuario:', editingUser.email);
+
   
   // --- MODO EDICIÓN ---
   
@@ -156,8 +155,7 @@ const resetPassword = async (userId, newPassword) => {
     .eq('id', editingUser.id);
 
   if (profileError) {
-    console.error('Error actualizando perfil:', profileError);
-    throw profileError;
+  throw profileError;
   }
 
   // 2. 🔐 Cambiar contraseña si se proporcionó
@@ -175,8 +173,7 @@ const resetPassword = async (userId, newPassword) => {
       await resetPassword(editingUser.id, formData.password);
       showSuccess('✓ Contraseña actualizada correctamente');
     } catch (pwdError) {
-      console.error('Error cambiando contraseña:', pwdError);
-      showError('Error al cambiar contraseña: ' + pwdError.message);
+    showError('Error al cambiar contraseña: ' + pwdError.message);
       // No lanzamos error para que continúe con el resto
     }
   }
@@ -186,7 +183,6 @@ const resetPassword = async (userId, newPassword) => {
   
   if (formData.add_investment && Number(formData.add_investment) > 0) {
     newInvestmentAmount += Number(formData.add_investment);
-    console.log('💰 Aumentando inversión en:', formData.add_investment);
   }
 
   if (editingUser.investment) {
@@ -200,7 +196,6 @@ const resetPassword = async (userId, newPassword) => {
       .eq('id', editingUser.investment.id);
 
     if (updateInvError) throw updateInvError;
-    console.log('✅ Inversión actualizada');
   } else {
     const { error: createInvError } = await supabase
       .from('investments')
@@ -211,13 +206,12 @@ const resetPassword = async (userId, newPassword) => {
       });
 
     if (createInvError) throw createInvError;
-    console.log('✅ Inversión creada');
+   
   }
 
   showSuccess('Usuario actualizado exitosamente');
 } else {
-        console.log('➕ Creando nuevo usuario');
-        
+              
         // --- MODO CREACIÓN ---
         
         if (!formData.password || formData.password.length < 6) {
@@ -234,7 +228,6 @@ const resetPassword = async (userId, newPassword) => {
 
         // 1. Crear usuario en Auth
         const tempClient = createSecondaryClient();
-        console.log('🔐 Creando usuario en Auth...');
         
         const { data: authData, error: authError } = await tempClient.auth.signUp({
           email: formData.email,
@@ -248,8 +241,7 @@ const resetPassword = async (userId, newPassword) => {
         });
 
         if (authError) {
-          console.error('Error en Auth:', authError);
-          throw authError;
+                throw authError;
         }
         
         if (!authData.user) {
@@ -257,8 +249,7 @@ const resetPassword = async (userId, newPassword) => {
         }
 
         const newUserId = authData.user.id;
-        console.log('✅ Usuario creado en Auth:', newUserId);
-
+        
         // 2. Esperar y actualizar perfil
         await new Promise(r => setTimeout(r, 1500));
 
@@ -271,8 +262,7 @@ const resetPassword = async (userId, newPassword) => {
           .eq('id', newUserId);
 
         if (updateProfileError) {
-          console.warn('Profile update warning:', updateProfileError);
-          // Intentar insert como fallback
+                 // Intentar insert como fallback
           await supabase.from('profiles').upsert({
             id: newUserId,
             email: formData.email,
@@ -281,7 +271,7 @@ const resetPassword = async (userId, newPassword) => {
           });
         }
 
-        console.log('✅ Perfil actualizado');
+     
 
         // 3. ✅ CREAR INVERSIÓN INICIAL CON DATOS
         const { error: invError } = await supabase
@@ -295,14 +285,8 @@ const resetPassword = async (userId, newPassword) => {
           });
 
         if (invError) {
-          console.error('Error creando inversión:', invError);
-          throw invError;
+         throw invError;
         }
-
-        console.log('✅ Inversión inicial creada:', {
-          inversion: formData.inversion_actual,
-          tasa: formData.tasa_mensual
-        });
 
     showSuccess(`Usuario creado: ${formData.email}`);
       }
@@ -310,7 +294,6 @@ const resetPassword = async (userId, newPassword) => {
       setIsModalOpen(false);
       loadUsers(); // Recargar lista
     } catch (error) {
-      console.error('❌ Error:', error);
       showError(error.message || "Error al guardar");
     } finally {
       setActionLoading(false);

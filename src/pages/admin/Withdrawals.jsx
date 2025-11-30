@@ -24,7 +24,7 @@ export default function AdminWithdrawals() {
       if (error) throw error;
       setWithdrawals(data);
     } catch (error) {
-      console.error("Error loading withdrawals:", error);
+     
     } finally {
       setLoading(false);
     }
@@ -45,7 +45,7 @@ export default function AdminWithdrawals() {
     showSuccess(`Retiro ${statusText} exitosamente`);
     loadData();
   } catch (error) {
-    console.error("Error updating withdrawal:", error);
+    
     showError("Error al actualizar el estado");
   }
 };

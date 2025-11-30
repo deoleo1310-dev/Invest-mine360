@@ -41,19 +41,18 @@ class DataCache {
     // Si hay datos en caché y son válidos, retornarlos
     const cached = this.get(key);
     if (cached) {
-      console.log('✅ Cache hit for:', key);
       return cached;
     }
 
     // Si ya hay una petición en curso, esperar por ella
     if (this.pendingRequests.has(key)) {
-      console.log('⏳ Awaiting pending request for:', key);
+     
       return this.pendingRequests.get(key);
     }
 
     // Crear nueva petición
-    console.log('🔄 Fetching fresh data for:', key);
-    const promise = fetchFn()
+    
+   const promise = fetchFn()
       .then(data => {
         this.set(key, data);
         this.pendingRequests.delete(key);
@@ -71,13 +70,13 @@ class DataCache {
   invalidate(key) {
     this.cache.delete(key);
     this.pendingRequests.delete(key);
-    console.log('🗑️ Cache invalidated for:', key);
+   
   }
 
   clear() {
     this.cache.clear();
     this.pendingRequests.clear();
-    console.log('🗑️ Cache cleared');
+   
   }
 }
 
@@ -186,11 +185,10 @@ export default function ClientDashboard() {
         if (mounted) {
           setInvestment(data.investment);
           setWithdrawals(data.withdrawals);
-          console.log('✅ Datos cargados correctamente');
+         
         }
       } catch (error) {
         if (mounted && error.name !== 'AbortError') {
-          console.error('❌ Error al cargar datos:', error);
           showError('Error al cargar datos. Por favor, recarga la página.');
         }
       } finally {
@@ -253,7 +251,7 @@ export default function ClientDashboard() {
     setWithdrawAmount('');
 
     try {
-      console.log('💰 Solicitando retiro de $', amount);
+      
       
       const { data, error } = await supabase
         .from('withdrawals')
@@ -266,8 +264,7 @@ export default function ClientDashboard() {
         .single();
 
       if (error) throw error;
-      
-      console.log('✅ Retiro creado exitosamente:', data.id);
+ 
 
       // Reemplaza el registro temporal con el real del servidor
       setWithdrawals(prev => 
@@ -280,9 +277,8 @@ export default function ClientDashboard() {
       showSuccess('✅ Solicitud de retiro enviada exitosamente');
       
     } catch (error) {
-      console.error('❌ Error al solicitar retiro:', error);
-      
-      // Revierte el cambio optimista en caso de error
+     
+     // Revierte el cambio optimista en caso de error
       setWithdrawals(prev => 
         prev.filter(w => w.id !== optimisticWithdrawal.id)
       );
