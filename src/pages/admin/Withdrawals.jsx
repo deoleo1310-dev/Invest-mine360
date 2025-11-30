@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Check, X, Loader2, AlertCircle, DollarSign } from 'lucide-react';
+import { Check, X, Loader2, DollarSign } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { format, differenceInWeeks } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -107,13 +107,7 @@ export default function AdminWithdrawals() {
       return;
     }
 
-    if (!confirm(
-      `¿CONFIRMAR PAGO?\n\n` +
-      `Usuario: ${withdrawal.profiles?.full_name}\n` +
-      `Monto: ${requested.toFixed(2)}\n` +
-      `Balance después: ${(available - requested).toFixed(2)}`
-    )) return;
-
+ 
     setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'approving' }));
 
     try {
@@ -142,12 +136,9 @@ export default function AdminWithdrawals() {
   };
 
   const handleReject = async (withdrawal) => {
-    if (!confirm(
-      `¿RECHAZAR RETIRO?\n\n` +
-      `Usuario: ${withdrawal.profiles?.full_name}\n` +
-      `Monto: $${withdrawal.monto}\n\n` +
-      `Los fondos volverán a estar disponibles.`
-    )) return;
+    if (
+      showSuccess('Los fondos volverán a estar disponibles.')
+    ) return;
 
     setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'rejecting' }));
 

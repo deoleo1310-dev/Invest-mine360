@@ -7,7 +7,6 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Plus, Pencil, TrendingUp, Loader2, Eye, EyeOff, Lock, AlertCircle } from 'lucide-react';
-import { differenceInWeeks } from 'date-fns';
 import { useToast } from '../../context/ToastContext';
 
 export default function AdminUsers() {
