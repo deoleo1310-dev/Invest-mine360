@@ -1,67 +1,94 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { ToastProvider } from './context/ToastContext'; // ← NUEVO
-import { Layout } from './components/layout/Layout';
-import Login from './pages/Login';
-import AdminUsers from './pages/admin/Users';
-import AdminWithdrawals from './pages/admin/Withdrawals';
-import ClientDashboard from './pages/client/Dashboard';
+import { ToastProvider } from './context/ToastContext';
+import { Loader2 } from 'lucide-react';
 
-// Protected Route Component
+
+import { Layout } from './components/layout/Layout';
+
+
+const Login = lazy(() => import('./pages/Login'));
+const AdminUsers = lazy(() => import('./pages/admin/Users'));
+const AdminWithdrawals = lazy(() => import('./pages/admin/Withdrawals'));
+const ClientDashboard = lazy(() => import('./pages/client/Dashboard'));
+
+
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-neutral-bg">
+    <div className="text-center">
+      <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+      <p className="text-neutral-gray font-medium">Cargando...</p>
+    </div>
+  </div>
+);
+
+// ✅ Protected Route Component (Optimizado)
 const ProtectedRoute = ({ children, role }) => {
   const { user, loading } = useAuth();
   
+  // Mientras carga autenticación
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-bg">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-neutral-gray">Cargando...</p>
-        </div>
-      </div>
-    );
+    return <PageLoader />;
   }
   
+  // Si no está autenticado
   if (!user) {
     return <Navigate to="/login" replace />;
   }
   
+  // Si requiere un rol específico y no lo tiene
   if (role && user.role !== role) {
     return <Navigate to={user.role === 'admin' ? '/admin' : '/client'} replace />;
   }
 
+  // Usuario válido, mostrar contenido
   return <Layout>{children}</Layout>;
 };
 
 function App() {
   return (
-    <ToastProvider> {/* ← ENVUELVE TODO CON ToastProvider */}
+    <ToastProvider>
       <AuthProvider>
         <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            
-            <Route path="/admin" element={
-              <ProtectedRoute role="admin">
-                <AdminUsers />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/withdrawals" element={
-              <ProtectedRoute role="admin">
-                <AdminWithdrawals />
-              </ProtectedRoute>
-            } />
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              {/* ✅ Ruta pública - Login */}
+              <Route path="/login" element={<Login />} />
+              
+              {/* ✅ Rutas de Admin */}
+              <Route 
+                path="/admin" 
+                element={
+                  <ProtectedRoute role="admin">
+                    <AdminUsers />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/admin/withdrawals" 
+                element={
+                  <ProtectedRoute role="admin">
+                    <AdminWithdrawals />
+                  </ProtectedRoute>
+                } 
+              />
 
-            <Route path="/client" element={
-              <ProtectedRoute role="cliente">
-                <ClientDashboard />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/" element={<Navigate to="/login" replace />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
+              {/* ✅ Ruta de Cliente */}
+              <Route 
+                path="/client" 
+                element={
+                  <ProtectedRoute role="cliente">
+                    <ClientDashboard />
+                  </ProtectedRoute>
+                } 
+              />
+              
+              {/* ✅ Redirects */}
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="*" element={<Navigate to="/login" replace />} />
+            </Routes>
+          </Suspense>
         </BrowserRouter>
       </AuthProvider>
     </ToastProvider>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 const AuthContext = createContext();
@@ -6,174 +6,104 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const isFetching = useRef(false);
-  const lastFetchTime = useRef(0); // ✅ Previene fetches duplicados
 
-  // ✅ DEBOUNCE: Evita llamadas múltiples en <300ms
-  const debounce = (fn, delay) => {
-    let timeoutId;
-    return (...args) => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => fn(...args), delay);
-    };
-  };
-
-  useEffect(() => {
-   
-    
-    const getSession = async () => {
-      try {
-        
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-         
-          setLoading(false);
-          return;
-        }
-
-        if (session?.user) {
-         
-          await fetchProfile(session.user);
-        } else {
-          
-          setLoading(false);
-        }
-      } catch (error) {
-       
-        setLoading(false);
-      }
-    };
-
-    getSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-    
-      
-      // IGNORAR eventos que no cambian el estado real
-      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-      
-        return;
-      }
-      
-      if (session?.user && event === 'SIGNED_IN') {
-        await fetchProfile(session.user);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setLoading(false);
-      }
-    });
-
-    return () => {
-     subscription.unsubscribe();
-    };
-  }, []);
-
-  // CACHE DE 1 SEGUNDO: Previene fetches duplicados
-  const fetchProfile = useCallback(async (authUser) => {
-    const now = Date.now();
-    
-    // Si ya se hizo fetch hace menos de 1 segundo, ignorar
-    if (now - lastFetchTime.current < 1000) {
-      return;
-    }
-
-    if (isFetching.current) {
-      
-      return;
-    }
-
-    isFetching.current = true;
-    lastFetchTime.current = now;
-    
+  // ✅ OPTIMIZACIÓN: Fetch más rápido con abort controller
+  const fetchProfile = useCallback(async (authUser, signal) => {
     try {
-     
-      
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, email, full_name, role')
         .eq('id', authUser.id)
-        .single();
+        .abortSignal(signal)
+        .maybeSingle();
 
-      if (error) {
-        
-        //  FALLBACK: Crear perfil si no existe
-        if (error.code === 'PGRST116') {
-          
-          
-          const { data: newProfile, error: createError } = await supabase
-            .from('profiles')
-            .insert({
-              id: authUser.id,
-              email: authUser.email,
-              full_name: authUser.user_metadata?.full_name || authUser.email.split('@')[0],
-              role: 'cliente'
-            })
-            .select()
-            .single();
-
-          if (!createError && newProfile) {
-          
-            setUser({ ...authUser, ...newProfile });
-          } else {
-            
-            setUser({ 
-              ...authUser, 
-              role: 'cliente',
-              full_name: authUser.email.split('@')[0]
-            });
-          }
-        } else {
-          // Otro error, usar datos básicos
-          setUser({ 
-            ...authUser, 
-            role: 'cliente',
-            full_name: authUser.email.split('@')[0]
-          });
-        }
-      } else {
-        
-        setUser({ ...authUser, ...profile });
+      if (error && error.code !== 'PGRST116') {
+        console.warn('Profile fetch error:', error.message);
+        return { 
+          ...authUser, 
+          role: 'cliente',
+          full_name: authUser.email.split('@')[0]
+        };
       }
+
+      return profile ? { ...authUser, ...profile } : {
+        ...authUser,
+        role: 'cliente',
+        full_name: authUser.user_metadata?.full_name || authUser.email.split('@')[0]
+      };
     } catch (error) {
-    
-      setUser({ 
+      if (error.name === 'AbortError') throw error;
+      return { 
         ...authUser, 
         role: 'cliente',
         full_name: authUser.email.split('@')[0]
-      });
-    } finally {
-      setLoading(false);
-      isFetching.current = false;
+      };
     }
   }, []);
 
-  const login = async (email, password) => {
-    try {
+  useEffect(() => {
+    const abortController = new AbortController();
+    let mounted = true;
     
-      setLoading(true);
-      
+    const initSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user && mounted) {
+          const userData = await fetchProfile(session.user, abortController.signal);
+          if (mounted) setUser(userData);
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Session init error:', error);
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    initSession();
+
+    // ✅ OPTIMIZACIÓN: Solo escuchar cambios importantes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!mounted) return;
+        
+        // Ignorar eventos que no cambian el estado
+        if (event === 'TOKEN_REFRESHED') return;
+        
+        if (event === 'SIGNED_IN' && session?.user) {
+          const userData = await fetchProfile(session.user, abortController.signal);
+          if (mounted) setUser(userData);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      abortController.abort();
+      subscription.unsubscribe();
+    };
+  }, [fetchProfile]);
+
+  const login = async (email, password) => {
+    setLoading(true);
+    try {
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email, 
         password 
       });
       
-      if (error) {
-       
-        setLoading(false);
-        throw error;
-      }
-      
+      if (error) throw error;
       return data;
-    } catch (error) {
-      
+    } finally {
       setLoading(false);
-      throw error;
     }
   };
 
   const logout = async () => {
-    
     await supabase.auth.signOut();
     setUser(null);
   };
