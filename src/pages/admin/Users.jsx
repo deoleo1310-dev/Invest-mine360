@@ -17,7 +17,7 @@ export default function AdminUsers() {
   const [actionLoading, setActionLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const { showSuccess, showError } = useToast(); // Toast notificaticaciones
+  const { showSuccess, showError } = useToast();
   
   const [formData, setFormData] = useState({
     full_name: '',
@@ -25,191 +25,183 @@ export default function AdminUsers() {
     password: '',
     confirmPassword: '', 
     inversion_actual: '',
-    tasa_mensual: '',
+    tasa_diaria: '', // ✅ CAMBIADO: tasa_mensual → tasa_diaria
     add_investment: ''
   });
 
- const loadUsers = async () => {
-  try {
-    setLoading(true);
-    
-    // 1. Obtener perfiles con inversiones
-    const { data: profiles, error: profilesError } = await supabase
-      .from('profiles')
-      .select('*, investments(*)')
-      .eq('role', 'cliente')
-      .order('created_at', { ascending: false });
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      
+      // 1. Obtener perfiles con inversiones
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*, investments(*)')
+        .eq('role', 'cliente')
+        .order('created_at', { ascending: false });
 
-    if (profilesError) throw profilesError;
-    
-    // 2. Calcular ganancias en el servidor para cada usuario
-    const usersWithEarnings = await Promise.all(
-      profiles.map(async (user) => {
-        const { data: earnings, error: earningsError } = await supabase
-          .rpc('get_user_total_earnings', { p_user_id: user.id });
-        
-        if (earningsError) {
-        }
-        
-        return {
-          ...user,
-          investment: user.investments?.[0] || null,
-          totalEarnings: earnings?.[0]?.total_earnings || 0,
-          weeksCount: earnings?.[0]?.weeks_count || 0,
-          weeklyRate: earnings?.[0]?.weekly_rate || 0
-        };
-      })
-    );
-    
- 
-    setUsers(usersWithEarnings);
-  } catch (error) {
-   
-    showError("Error al cargar usuarios: " + error.message);
-  } finally {
-    setLoading(false);
-  }
-};
+      if (profilesError) throw profilesError;
+      
+      // 2. Calcular ganancias totales para cada usuario
+      const usersWithEarnings = await Promise.all(
+        profiles.map(async (user) => {
+          const { data: earnings, error: earningsError } = await supabase
+            .rpc('get_user_total_earnings', { p_user_id: user.id });
+          
+          if (earningsError) {
+            console.error('Error earnings:', earningsError);
+          }
+          
+          return {
+            ...user,
+            investment: user.investments?.[0] || null,
+            totalEarnings: earnings?.[0]?.total_earnings || 0,
+            daysCount: earnings?.[0]?.days_count || 0, // ✅ CAMBIADO: weeks_count → days_count
+            dailyRate: earnings?.[0]?.daily_rate || 0  // ✅ CAMBIADO: weekly_rate → daily_rate
+          };
+        })
+      );
+      
+      setUsers(usersWithEarnings);
+    } catch (error) {
+      showError("Error al cargar usuarios: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadUsers();
   }, []);
 
   const handleOpenModal = (user = null) => {
-  setEditingUser(user);
-  if (user) {
-    setFormData({
-      full_name: user.full_name,
-      email: user.email,
-      password: '',              // ← Siempre vacío al editar
-      confirmPassword: '',       // ← Siempre vacío al editar
-      inversion_actual: user.investment?.inversion_actual || 0,
-      tasa_mensual: user.investment?.tasa_mensual || 0,
-      add_investment: ''
-    });
-  } else {
-    setFormData({
-      full_name: '',
-      email: '',
-      password: '',
-      confirmPassword: '',
-      inversion_actual: '',
-      tasa_mensual: '',
-      add_investment: ''
-    });
-  }
-  setIsModalOpen(true);
-};
-
-// Función para resetear contraseña usando Edge Function
-const resetPassword = async (userId, newPassword) => {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session) {
-      throw new Error('No hay sesión activa');
+    setEditingUser(user);
+    if (user) {
+      setFormData({
+        full_name: user.full_name,
+        email: user.email,
+        password: '',
+        confirmPassword: '',
+        inversion_actual: user.investment?.inversion_actual || 0,
+        tasa_diaria: user.investment?.tasa_diaria || 0, // ✅ CAMBIADO
+        add_investment: ''
+      });
+    } else {
+      setFormData({
+        full_name: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+        inversion_actual: '',
+        tasa_diaria: '', // ✅ CAMBIADO
+        add_investment: ''
+      });
     }
-    
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-reset-password`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          userId,
-          newPassword
-        })
+    setIsModalOpen(true);
+  };
+
+  // Función para resetear contraseña
+  const resetPassword = async (userId, newPassword) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No hay sesión activa');
       }
-    );
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-reset-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            userId,
+            newPassword
+          })
+        }
+      );
 
-    const result = await response.json();
+      const result = await response.json();
 
-    if (!result.success) {
-      throw new Error(result.error || 'Error al cambiar contraseña');
+      if (!result.success) {
+        throw new Error(result.error || 'Error al cambiar contraseña');
+      }
+
+      return result;
+    } catch (error) {
+      throw error;
     }
+  };
 
-    return result;
-  } catch (error) {
-    throw error;
-  }
-};
   const handleSubmit = async (e) => {
     e.preventDefault();
     setActionLoading(true);
     
     try {
-   if (editingUser) {
+      if (editingUser) {
+        // --- MODO EDICIÓN ---
+        
+        // 1. Actualizar Perfil
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ full_name: formData.full_name })
+          .eq('id', editingUser.id);
 
-  
-  // --- MODO EDICIÓN ---
-  
-  // 1. Actualizar Perfil
-  const { error: profileError } = await supabase
-    .from('profiles')
-    .update({ full_name: formData.full_name })
-    .eq('id', editingUser.id);
+        if (profileError) throw profileError;
 
-  if (profileError) {
-  throw profileError;
-  }
+        // 2. Cambiar contraseña si se proporcionó
+        if (formData.password) {
+          if (formData.password !== formData.confirmPassword) {
+            throw new Error('Las contraseñas no coinciden');
+          }
+          
+          if (formData.password.length < 6) {
+            throw new Error('La contraseña debe tener al menos 6 caracteres');
+          }
+          
+          try {
+            await resetPassword(editingUser.id, formData.password);
+            showSuccess('✓ Contraseña actualizada correctamente');
+          } catch (pwdError) {
+            showError('Error al cambiar contraseña: ' + pwdError.message);
+          }
+        }
 
-  // 2. 🔐 Cambiar contraseña si se proporcionó
-  if (formData.password) {
-    // Validar que las contraseñas coincidan
-    if (formData.password !== formData.confirmPassword) {
-      throw new Error('Las contraseñas no coinciden');
-    }
-    
-    if (formData.password.length < 6) {
-      throw new Error('La contraseña debe tener al menos 6 caracteres');
-    }
-    
-    try {
-      await resetPassword(editingUser.id, formData.password);
-      showSuccess('✓ Contraseña actualizada correctamente');
-    } catch (pwdError) {
-    showError('Error al cambiar contraseña: ' + pwdError.message);
-      // No lanzamos error para que continúe con el resto
-    }
-  }
+        // 3. Actualizar/Crear Inversión
+        let newInvestmentAmount = Number(formData.inversion_actual);
+        
+        if (formData.add_investment && Number(formData.add_investment) > 0) {
+          newInvestmentAmount += Number(formData.add_investment);
+        }
 
-  // 3. Actualizar/Crear Inversión
-  let newInvestmentAmount = Number(formData.inversion_actual);
-  
-  if (formData.add_investment && Number(formData.add_investment) > 0) {
-    newInvestmentAmount += Number(formData.add_investment);
-  }
+        if (editingUser.investment) {
+          const { error: updateInvError } = await supabase
+            .from('investments')
+            .update({
+              inversion_actual: newInvestmentAmount,
+              tasa_diaria: Number(formData.tasa_diaria), // ✅ CAMBIADO
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', editingUser.investment.id);
 
-  if (editingUser.investment) {
-    const { error: updateInvError } = await supabase
-      .from('investments')
-      .update({
-        inversion_actual: newInvestmentAmount,
-        tasa_mensual: Number(formData.tasa_mensual),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', editingUser.investment.id);
+          if (updateInvError) throw updateInvError;
+        } else {
+          const { error: createInvError } = await supabase
+            .from('investments')
+            .insert({
+              user_id: editingUser.id,
+              inversion_actual: newInvestmentAmount,
+              tasa_diaria: Number(formData.tasa_diaria) // ✅ CAMBIADO
+            });
 
-    if (updateInvError) throw updateInvError;
-  } else {
-    const { error: createInvError } = await supabase
-      .from('investments')
-      .insert({
-        user_id: editingUser.id,
-        inversion_actual: newInvestmentAmount,
-        tasa_mensual: Number(formData.tasa_mensual)
-      });
+          if (createInvError) throw createInvError;
+        }
 
-    if (createInvError) throw createInvError;
-   
-  }
-
-  showSuccess('Usuario actualizado exitosamente');
-} else {
-              
+        showSuccess('Usuario actualizado exitosamente');
+      } else {
         // --- MODO CREACIÓN ---
         
         if (!formData.password || formData.password.length < 6) {
@@ -220,11 +212,11 @@ const resetPassword = async (userId, newPassword) => {
           throw new Error("Debes ingresar un monto de inversión inicial");
         }
 
-        if (!formData.tasa_mensual || Number(formData.tasa_mensual) <= 0) {
-          throw new Error("Debes ingresar una tasa mensual");
+        if (!formData.tasa_diaria || Number(formData.tasa_diaria) <= 0) {
+          throw new Error("Debes ingresar una tasa diaria"); // ✅ CAMBIADO
         }
 
-        // 1. Crear usuario en Auth
+        // 1. Crear usuario
         const tempClient = createSecondaryClient();
         
         const { data: authData, error: authError } = await tempClient.auth.signUp({
@@ -234,21 +226,15 @@ const resetPassword = async (userId, newPassword) => {
             data: {
               full_name: formData.full_name
             },
-            emailRedirectTo: undefined // Desactivar email de confirmación
+            emailRedirectTo: undefined
           }
         });
 
-        if (authError) {
-                throw authError;
-        }
-        
-        if (!authData.user) {
-          throw new Error("No se pudo crear el usuario");
-        }
+        if (authError) throw authError;
+        if (!authData.user) throw new Error("No se pudo crear el usuario");
 
         const newUserId = authData.user.id;
         
-        // 2. Esperar y actualizar perfil
         await new Promise(r => setTimeout(r, 1500));
 
         const { error: updateProfileError } = await supabase
@@ -260,7 +246,6 @@ const resetPassword = async (userId, newPassword) => {
           .eq('id', newUserId);
 
         if (updateProfileError) {
-                 // Intentar insert como fallback
           await supabase.from('profiles').upsert({
             id: newUserId,
             email: formData.email,
@@ -269,28 +254,24 @@ const resetPassword = async (userId, newPassword) => {
           });
         }
 
-     
-
-        // 3. ✅ CREAR INVERSIÓN INICIAL CON DATOS
+        // 2. Crear inversión inicial
         const { error: invError } = await supabase
           .from('investments')
           .insert({
             user_id: newUserId,
             inversion_actual: Number(formData.inversion_actual),
-            tasa_mensual: Number(formData.tasa_mensual),
+            tasa_diaria: Number(formData.tasa_diaria), // ✅ CAMBIADO
             ganancia_acumulada: 0,
             created_at: new Date().toISOString()
           });
 
-        if (invError) {
-         throw invError;
-        }
+        if (invError) throw invError;
 
-    showSuccess(`Usuario creado: ${formData.email}`);
+        showSuccess(`Usuario creado: ${formData.email}`);
       }
 
       setIsModalOpen(false);
-      loadUsers(); // Recargar lista
+      loadUsers();
     } catch (error) {
       showError(error.message || "Error al guardar");
     } finally {
@@ -339,24 +320,27 @@ const resetPassword = async (userId, newPassword) => {
                     Inv: ${user.investment?.inversion_actual?.toLocaleString() || 0}
                   </Badge>
                   <Badge variant="success">
-                    Tasa: {user.investment?.tasa_mensual || 0}% mensual
+                    {/* ✅ CAMBIADO: Mostrar tasa diaria */}
+                    Tasa: {user.investment?.tasa_diaria || 0}% diaria
                   </Badge>
                 </div>
                 
-               <div className="flex items-center gap-2 text-status-success font-medium bg-status-success/5 p-2 rounded-lg">
-  <TrendingUp size={16} />
-  <span>
-    Ganancia semanal acumulada: ${Number(user.totalEarnings || 0).toLocaleString('es-DO', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}
-  </span>
-  {user.weeksCount > 0 && (
-    <span className="text-xs text-neutral-gray ml-2">
-      ({user.weeksCount} semanas × {user.weeklyRate}%)
-    </span>
-  )}
-</div>
+                <div className="flex items-center gap-2 text-status-success font-medium bg-status-success/5 p-2 rounded-lg">
+                  <TrendingUp size={16} />
+                  <span>
+                    {/* ✅ CAMBIADO: Mostrar ganancia diaria acumulada */}
+                    Ganancia diaria acumulada: ${Number(user.totalEarnings || 0).toLocaleString('es-DO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}
+                  </span>
+                  {user.daysCount > 0 && (
+                    <span className="text-xs text-neutral-gray ml-2">
+                      {/* ✅ CAMBIADO: semanas → días */}
+                      ({user.daysCount} días × {user.dailyRate}%)
+                    </span>
+                  )}
+                </div>
               </div>
             </Card>
           ))}
@@ -387,76 +371,74 @@ const resetPassword = async (userId, newPassword) => {
             placeholder="juan@example.com"
           />
 
-{/* 🔐 NUEVA SECCIÓN DE CONTRASEÑA */}
-<div className="space-y-4 border-t pt-4">
-  <div className="flex items-center gap-2 text-sm text-neutral-gray">
-    <Lock size={16} />
-    <span className="font-medium">
-      {editingUser ? 'Cambiar Contraseña (Opcional)' : 'Contraseña *'}
-    </span>
-  </div>
+          {/* Sección de contraseña */}
+          <div className="space-y-4 border-t pt-4">
+            <div className="flex items-center gap-2 text-sm text-neutral-gray">
+              <Lock size={16} />
+              <span className="font-medium">
+                {editingUser ? 'Cambiar Contraseña (Opcional)' : 'Contraseña *'}
+              </span>
+            </div>
 
-  {/* Campo Contraseña */}
-  <div>
-    <label className="text-sm font-medium text-neutral-gray block mb-2">
-      Nueva Contraseña
-    </label>
-    <div className="relative">
-      <input
-        type={showPassword ? "text" : "password"}
-        value={formData.password}
-        onChange={e => setFormData({...formData, password: e.target.value})}
-        placeholder={editingUser ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"}
-        className="w-full px-4 py-2.5 pr-10 rounded-lg border border-neutral-border focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-      />
-      <button
-        type="button"
-        onClick={() => setShowPassword(!showPassword)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-gray hover:text-primary"
-      >
-        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-      </button>
-    </div>
-  </div>
+            <div>
+              <label className="text-sm font-medium text-neutral-gray block mb-2">
+                Nueva Contraseña
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={formData.password}
+                  onChange={e => setFormData({...formData, password: e.target.value})}
+                  placeholder={editingUser ? "Dejar vacío para no cambiar" : "Mínimo 6 caracteres"}
+                  className="w-full px-4 py-2.5 pr-10 rounded-lg border border-neutral-border focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-gray hover:text-primary"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
 
-  {/* Campo Confirmar Contraseña - Solo si hay algo en password */}
-  {(formData.password || !editingUser) && (
-    <div>
-      <label className="text-sm font-medium text-neutral-gray block mb-2">
-        Confirmar Contraseña {!editingUser && '*'}
-      </label>
-      <div className="relative">
-        <input
-          type={showConfirmPassword ? "text" : "password"}
-          value={formData.confirmPassword}
-          onChange={e => setFormData({...formData, confirmPassword: e.target.value})}
-          placeholder="Repetir contraseña"
-          className="w-full px-4 py-2.5 pr-10 rounded-lg border border-neutral-border focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-        />
-        <button
-          type="button"
-          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-gray hover:text-primary"
-        >
-          {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-        </button>
-      </div>
-      {formData.password !== formData.confirmPassword && formData.confirmPassword && (
-        <p className="text-xs text-red-500 mt-1">Las contraseñas no coinciden</p>
-      )}
-    </div>
-  )}
+            {(formData.password || !editingUser) && (
+              <div>
+                <label className="text-sm font-medium text-neutral-gray block mb-2">
+                  Confirmar Contraseña {!editingUser && '*'}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={e => setFormData({...formData, confirmPassword: e.target.value})}
+                    placeholder="Repetir contraseña"
+                    className="w-full px-4 py-2.5 pr-10 rounded-lg border border-neutral-border focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-gray hover:text-primary"
+                  >
+                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {formData.password !== formData.confirmPassword && formData.confirmPassword && (
+                  <p className="text-xs text-red-500 mt-1">Las contraseñas no coinciden</p>
+                )}
+              </div>
+            )}
 
-  {/* Alerta de seguridad */}
-  {editingUser && formData.password && (
-    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2">
-      <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={18} />
-      <p className="text-xs text-amber-800">
-        La contraseña se cambiará inmediatamente. El usuario deberá usar la nueva contraseña en su próximo inicio de sesión.
-      </p>
-    </div>
-  )}
-</div>
+            {editingUser && formData.password && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2">
+                <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={18} />
+                <p className="text-xs text-amber-800">
+                  La contraseña se cambiará inmediatamente.
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <Input 
               label="Inversión Inicial ($)"
@@ -468,14 +450,15 @@ const resetPassword = async (userId, newPassword) => {
               required={!editingUser}
               placeholder="1000"
             />
+            {/* ✅ CAMBIADO: Label y placeholder */}
             <Input 
-              label="Tasa Mensual (%)"
+              label="Tasa Diaria (%)"
               type="number"
-              step="0.01"
-              value={formData.tasa_mensual}
-              onChange={e => setFormData({...formData, tasa_mensual: e.target.value})}
+              step="0.0001"
+              value={formData.tasa_diaria}
+              onChange={e => setFormData({...formData, tasa_diaria: e.target.value})}
               required
-              placeholder="5.5"
+              placeholder="0.1833"
             />
           </div>
 

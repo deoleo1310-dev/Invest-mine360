@@ -6,13 +6,11 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus, AlertTriangle } from 'lucide-react';
-import { differenceInWeeks, format } from 'date-fns';
+import { differenceInDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useToast } from '../../context/ToastContext';
 
-// ============================================
-// CACHÉ MEJORADO
-// ============================================
+// ✅ CACHÉ MEJORADO
 class DataCache {
   constructor(ttl = 30000) {
     this.cache = new Map();
@@ -38,16 +36,11 @@ class DataCache {
 
   async getOrFetch(key, fetchFn) {
     const cached = this.get(key);
-    if (cached) {
-    
-      return cached;
-    }
+    if (cached) return cached;
 
     if (this.pendingRequests.has(key)) {
-     
       return this.pendingRequests.get(key);
     }
-
 
     const promise = fetchFn()
       .then(data => {
@@ -77,39 +70,37 @@ class DataCache {
 
 const clientCache = new DataCache(30000);
 
-// ============================================
-// ✅ FUNCIÓN CORREGIDA: Calcular Fondos Disponibles
-// ============================================
+// ✅ FUNCIÓN ACTUALIZADA: Calcular Fondos Disponibles (DIARIO)
 const calculateAvailableFunds = (investment, withdrawals) => {
-  if (!investment?.inversion_actual || !investment?.tasa_mensual) {
+  if (!investment?.inversion_actual || !investment?.tasa_diaria) {
     return {
       totalEarnings: 0,
       paidWithdrawals: 0,
       pendingWithdrawals: 0,
       availableBalance: 0,
-      weeks: 0,
-      weeklyRate: 0,
-      weeklyGain: 0
+      days: 0,
+      dailyRate: 0,
+      dailyGain: 0
     };
   }
   
-  // Calcular ganancias totales
-  const weeks = differenceInWeeks(new Date(), new Date(investment.created_at)) || 0;
-  const weeklyRate = investment.tasa_mensual / 4;
-  const weeklyGain = investment.inversion_actual * (weeklyRate / 100);
-  const totalEarnings = weeklyGain * weeks;
+  // ✅ CAMBIADO: Calcular días en lugar de semanas
+  const days = differenceInDays(new Date(), new Date(investment.created_at)) || 0;
+  const dailyRate = investment.tasa_diaria;
+  const dailyGain = investment.inversion_actual * (dailyRate / 100);
+  const totalEarnings = dailyGain * days;
   
   // Calcular retiros PAGADOS
   const paidWithdrawals = (withdrawals || [])
     .filter(w => w.estado === 'pagado')
     .reduce((acc, curr) => acc + Number(curr.monto), 0);
   
-  // ⚠️ NUEVO: Calcular retiros PENDIENTES (fondos reservados)
+  // Calcular retiros PENDIENTES (fondos reservados)
   const pendingWithdrawals = (withdrawals || [])
     .filter(w => w.estado === 'pendiente')
     .reduce((acc, curr) => acc + Number(curr.monto), 0);
   
-  // ✅ Balance disponible = Total - Pagados - Pendientes
+  // Balance disponible
   const availableBalance = Math.max(0, totalEarnings - paidWithdrawals - pendingWithdrawals);
   
   return {
@@ -117,15 +108,12 @@ const calculateAvailableFunds = (investment, withdrawals) => {
     paidWithdrawals: paidWithdrawals.toFixed(2),
     pendingWithdrawals: pendingWithdrawals.toFixed(2),
     availableBalance: availableBalance.toFixed(2),
-    weeks,
-    weeklyRate: weeklyRate.toFixed(2),
-    weeklyGain: weeklyGain.toFixed(2)
+    days, // ✅ CAMBIADO
+    dailyRate: dailyRate.toFixed(4), // ✅ CAMBIADO
+    dailyGain: dailyGain.toFixed(2)  // ✅ CAMBIADO
   };
 };
 
-// ============================================
-// COMPONENTE PRINCIPAL
-// ============================================
 export default function ClientDashboard() {
   const { user } = useAuth();
   const { showSuccess, showError, showInfo } = useToast();
@@ -139,9 +127,7 @@ export default function ClientDashboard() {
   const isMountedRef = useRef(true);
   const abortControllerRef = useRef(null);
 
-  // ============================================
-  // FETCH OPTIMIZADO
-  // ============================================
+  // ✅ FETCH OPTIMIZADO
   const fetchClientData = useCallback(async (userId) => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -164,12 +150,8 @@ export default function ClientDashboard() {
           .order('fecha_solicitud', { ascending: false })
       ]);
 
-      if (invResult.error) {
-      
-      }
-      if (wdResult.error) {
-    
-      }
+      if (invResult.error) console.error('Investment error:', invResult.error);
+      if (wdResult.error) console.error('Withdrawals error:', wdResult.error);
 
       return {
         investment: invResult.data,
@@ -178,9 +160,7 @@ export default function ClientDashboard() {
     });
   }, []);
 
-  // ============================================
-  // EFECTO: Carga inicial
-  // ============================================
+  // ✅ EFECTO: Carga inicial
   useEffect(() => {
     if (!user?.id) return;
 
@@ -194,7 +174,6 @@ export default function ClientDashboard() {
         if (mounted) {
           setInvestment(data.investment);
           setWithdrawals(data.withdrawals);
-         
         }
       } catch (error) {
         if (mounted && error.name !== 'AbortError') {
@@ -217,30 +196,24 @@ export default function ClientDashboard() {
     };
   }, [user?.id, fetchClientData, showError]);
 
-  // ============================================
-  // MEMOIZACIÓN: Calcular fondos
-  // ============================================
+  // ✅ MEMOIZACIÓN: Calcular fondos
   const funds = useMemo(() => 
     calculateAvailableFunds(investment, withdrawals), 
     [investment, withdrawals]
   );
 
-  // ============================================
-  // 🔒 HANDLER: Solicitar Retiro (CON VALIDACIÓN)
-  // ============================================
+  // ✅ HANDLER: Solicitar Retiro
   const handleWithdrawRequest = async (e) => {
     e.preventDefault();
     
     const amount = Number(withdrawAmount);
     const available = Number(funds.availableBalance);
 
-    // ✅ VALIDACIÓN 1: Monto mínimo
     if (amount < 50) {
       showError('El retiro mínimo es de $50');
       return;
     }
     
-    // ✅ VALIDACIÓN 2: Fondos suficientes
     if (amount > available) {
       showError(
         `Fondos insuficientes.\n\n` +
@@ -254,7 +227,7 @@ export default function ClientDashboard() {
 
     setSubmitting(true);
 
-    // UI Optimista: Actualiza inmediatamente
+    // UI Optimista
     const optimisticWithdrawal = {
       id: 'temp-' + Date.now(),
       user_id: user.id,
@@ -267,8 +240,6 @@ export default function ClientDashboard() {
     setWithdrawAmount('');
 
     try {
-      
-      
       const { data, error } = await supabase
         .from('withdrawals')
         .insert({
@@ -280,9 +251,7 @@ export default function ClientDashboard() {
         .single();
 
       if (error) throw error;
- 
 
-      // Reemplaza el temporal con el real
       setWithdrawals(prev => 
         prev.map(w => w.id === optimisticWithdrawal.id ? data : w)
       );
@@ -295,9 +264,6 @@ export default function ClientDashboard() {
       );
       
     } catch (error) {
-     
-      
-      // Revierte el cambio optimista
       setWithdrawals(prev => 
         prev.filter(w => w.id !== optimisticWithdrawal.id)
       );
@@ -308,17 +274,13 @@ export default function ClientDashboard() {
     }
   };
 
-  // ============================================
-  // HANDLER: Invertir Más
-  // ============================================
+  // ✅ HANDLER: Invertir Más
   const handleInvestClick = useCallback(() => {
-    alert("Por favor enviar el comprobante de pago al WhatsApp del administrador, para que proceda con la actualización de su inversión en la app");
+    alert("Por favor enviar el comprobante de pago al WhatsApp del administrador");
     window.open('https://www.paypal.com/paypalme/DevonBrantPierre2025', '_blank');
   }, []);
 
-  // ============================================
-  // RENDER: Estado de Carga
-  // ============================================
+  // ✅ RENDER: Estado de Carga
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-[60vh]">
@@ -330,9 +292,7 @@ export default function ClientDashboard() {
     );
   }
 
-  // ============================================
-  // RENDER: Sin Inversión
-  // ============================================
+  // ✅ RENDER: Sin Inversión
   if (!investment) {
     return (
       <div className="max-w-2xl mx-auto text-center py-20">
@@ -349,9 +309,7 @@ export default function ClientDashboard() {
     );
   }
 
-  // ============================================
-  // RENDER: Dashboard Principal
-  // ============================================
+  // ✅ RENDER: Dashboard Principal
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* Header Stats */}
@@ -360,7 +318,8 @@ export default function ClientDashboard() {
           <h2 className="text-2xl font-bold text-primary-dark">Mi Inversión</h2>
           <div className="flex items-center gap-2 text-sm text-neutral-gray bg-white px-3 py-2 rounded-lg shadow-sm">
             <Calendar size={16} />
-            <span>{funds.weeks} semanas activas</span>
+            {/* ✅ CAMBIADO: semanas → días */}
+            <span>{funds.days} días activos</span>
           </div>
         </div>
         
@@ -373,18 +332,20 @@ export default function ClientDashboard() {
             </h3>
             <div className="flex items-center gap-2 text-sm bg-white/10 w-fit px-2 py-1 rounded mt-2">
               <TrendingUp size={16} />
-              <span>{funds.weeklyRate}% Semanal</span>
+              {/* ✅ CAMBIADO: Mostrar tasa diaria */}
+              <span>{funds.dailyRate}% Diaria</span>
             </div>
             <p className="text-xs text-white/70 mt-2">
-              ({investment.tasa_mensual}% mensual)
+              ({(investment.tasa_diaria * 30).toFixed(2)}% mensual aprox)
             </p>
           </Card>
 
-          {/* Card 2: Ganancia Semanal */}
+          {/* Card 2: Ganancia Diaria */}
           <Card className="bg-gradient-to-br from-green-500 to-green-700 text-white border-none">
-            <p className="text-green-100 text-sm mb-1">Ganancia por Semana</p>
+            {/* ✅ CAMBIADO: Ganancia por Día */}
+            <p className="text-green-100 text-sm mb-1">Ganancia por Día</p>
             <h3 className="text-3xl font-bold mb-2">
-              ${funds.weeklyGain}
+              ${funds.dailyGain}
             </h3>
             <p className="text-xs text-white/80 mt-2">
               Total acumulado: ${funds.totalEarnings}
@@ -406,7 +367,6 @@ export default function ClientDashboard() {
               ${funds.availableBalance}
             </h3>
             
-            {/* ⚠️ ALERTA: Fondos Reservados */}
             {Number(funds.pendingWithdrawals) > 0 && (
               <div className="flex items-start gap-2 mt-2 p-2 bg-amber-100 rounded-lg border border-amber-300">
                 <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
@@ -449,7 +409,6 @@ export default function ClientDashboard() {
             </h3>
             
             <form onSubmit={handleWithdrawRequest} className="space-y-4">
-              {/* Balance Display */}
               <div className="bg-white p-4 rounded-lg border border-primary-light/50 shadow-sm">
                 <p className="text-xs text-neutral-gray mb-1">Disponible</p>
                 <p className="text-2xl font-bold text-status-success">

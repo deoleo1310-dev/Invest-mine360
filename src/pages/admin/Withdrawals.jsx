@@ -5,10 +5,10 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Check, X, Loader2, DollarSign } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
-import { format, differenceInWeeks } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-// ✅ FUNCIÓN CORREGIDA: Calcular balance ANTES del retiro actual
+// ✅ FUNCIÓN ACTUALIZADA: Calcular balance ANTES del retiro actual (DIARIO)
 const calculateUserBalance = async (userId, excludeWithdrawalId = null) => {
   try {
     const { data: investment, error: invError } = await supabase
@@ -19,9 +19,10 @@ const calculateUserBalance = async (userId, excludeWithdrawalId = null) => {
 
     if (invError || !investment) return null;
 
-    const weeks = differenceInWeeks(new Date(), new Date(investment.created_at)) || 0;
-    const weeklyGain = investment.inversion_actual * (investment.tasa_mensual / 4 / 100);
-    const totalEarnings = weeklyGain * weeks;
+    // ✅ CAMBIADO: Calcular días en lugar de semanas
+    const days = differenceInDays(new Date(), new Date(investment.created_at)) || 0;
+    const dailyGain = investment.inversion_actual * (investment.tasa_diaria / 100);
+    const totalEarnings = dailyGain * days;
 
     const { data: withdrawals, error: wdError } = await supabase
       .from('withdrawals')
@@ -34,14 +35,14 @@ const calculateUserBalance = async (userId, excludeWithdrawalId = null) => {
       .filter(w => w.estado === 'pagado')
       .reduce((sum, w) => sum + Number(w.monto), 0);
     
-    // ⚠️ CLAVE: Excluir el retiro que estamos evaluando
+    // ⚠️ Excluir el retiro que estamos evaluando
     const pendingWithdrawals = withdrawals
       .filter(w => w.estado === 'pendiente' && w.id !== excludeWithdrawalId)
       .reduce((sum, w) => sum + Number(w.monto), 0);
 
     return Math.max(0, totalEarnings - paidWithdrawals - pendingWithdrawals);
   } catch (error) {
-  
+    console.error('Error calculating balance:', error);
     return null;
   }
 };
@@ -66,12 +67,9 @@ export default function AdminWithdrawals() {
       if (wdError) throw wdError;
 
       setWithdrawals(withdrawalsData);
-
-      // ⚠️ NO pre-cargar balances aquí
-      // Los calculamos on-demand cuando se intenta aprobar
       setUserBalances({});
     } catch (error) {
-    
+      console.error('Load error:', error);
       showError('Error al cargar retiros');
     } finally {
       setLoading(false);
@@ -83,7 +81,7 @@ export default function AdminWithdrawals() {
   }, []);
 
   const handleApprove = async (withdrawal) => {
-    // ⚠️ IMPORTANTE: Excluir el retiro actual del cálculo
+    // ⚠️ Excluir el retiro actual del cálculo
     const balance = userBalances[withdrawal.user_id] ?? 
                     await calculateUserBalance(withdrawal.user_id, withdrawal.id);
     
@@ -95,7 +93,6 @@ export default function AdminWithdrawals() {
     const available = Number(balance);
     const requested = Number(withdrawal.monto);
 
-    // ✅ VALIDACIÓN: Ahora SÍ tiene en cuenta solo OTROS pendientes
     if (requested > available) {
       showError(
         `❌ FONDOS INSUFICIENTES\n\n` +
@@ -107,7 +104,6 @@ export default function AdminWithdrawals() {
       return;
     }
 
- 
     setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'approving' }));
 
     try {
@@ -124,7 +120,7 @@ export default function AdminWithdrawals() {
       showSuccess(`✅ Pago de ${requested.toFixed(2)} aprobado`);
       await loadData();
     } catch (error) {
-     
+      console.error('Approve error:', error);
       showError('Error al aprobar: ' + error.message);
     } finally {
       setActionLoading(prev => {
@@ -136,9 +132,7 @@ export default function AdminWithdrawals() {
   };
 
   const handleReject = async (withdrawal) => {
-    if (
-      showSuccess('Los fondos volverán a estar disponibles.')
-    ) return;
+    if (!confirm('¿Rechazar este retiro?')) return;
 
     setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'rejecting' }));
 
@@ -156,7 +150,7 @@ export default function AdminWithdrawals() {
       showInfo(`Retiro de $${withdrawal.monto} rechazado`);
       await loadData();
     } catch (error) {
-   
+      console.error('Reject error:', error);
       showError('Error: ' + error.message);
     } finally {
       setActionLoading(prev => {
@@ -222,69 +216,64 @@ export default function AdminWithdrawals() {
             </Card>
           )}
           
-          {filteredWithdrawals.map((w) => {
-            // ⚠️ NO mostrar alertas de balance aquí (calcularlo on-demand)
-            // Solo mostrar el botón habilitado para pendientes
+          {filteredWithdrawals.map((w) => (
+            <Card 
+              key={w.id} 
+              className="flex flex-col md:flex-row md:items-center justify-between gap-4"
+            >
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-bold text-neutral-text">
+                    {w.profiles?.full_name || 'Usuario'}
+                  </h3>
+                  <Badge variant={getBadgeVariant(w.estado)}>
+                    {w.estado.toUpperCase()}
+                  </Badge>
+                </div>
+                <p className="text-sm text-neutral-gray">{w.profiles?.email}</p>
+                <p className="text-xs text-neutral-gray mt-1">
+                  {format(new Date(w.fecha_solicitud), "d 'de' MMMM, yyyy", { locale: es })}
+                </p>
+              </div>
 
-            return (
-              <Card 
-                key={w.id} 
-                className="flex flex-col md:flex-row md:items-center justify-between gap-4"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-bold text-neutral-text">
-                      {w.profiles?.full_name || 'Usuario'}
-                    </h3>
-                    <Badge variant={getBadgeVariant(w.estado)}>
-                      {w.estado.toUpperCase()}
-                    </Badge>
+              <div className="flex items-center gap-3">
+                <span className="text-2xl font-bold text-primary-dark">
+                  ${Number(w.monto).toLocaleString()}
+                </span>
+
+                {w.estado === 'pendiente' && (
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="success" 
+                      className="p-2 rounded-full w-10 h-10" 
+                      onClick={() => handleApprove(w)}
+                      disabled={actionLoading[w.id]}
+                      title="Aprobar"
+                    >
+                      {actionLoading[w.id] === 'approving' ? (
+                        <Loader2 className="animate-spin" size={20} />
+                      ) : (
+                        <Check size={20} />
+                      )}
+                    </Button>
+                    <Button 
+                      variant="danger" 
+                      className="p-2 rounded-full w-10 h-10"
+                      onClick={() => handleReject(w)}
+                      disabled={actionLoading[w.id]}
+                      title="Rechazar"
+                    >
+                      {actionLoading[w.id] === 'rejecting' ? (
+                        <Loader2 className="animate-spin" size={20} />
+                      ) : (
+                        <X size={20} />
+                      )}
+                    </Button>
                   </div>
-                  <p className="text-sm text-neutral-gray">{w.profiles?.email}</p>
-                  <p className="text-xs text-neutral-gray mt-1">
-                    {format(new Date(w.fecha_solicitud), "d 'de' MMMM, yyyy", { locale: es })}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl font-bold text-primary-dark">
-                    ${Number(w.monto).toLocaleString()}
-                  </span>
-
-                  {w.estado === 'pendiente' && (
-                    <div className="flex gap-2">
-                      <Button 
-                        variant="success" 
-                        className="p-2 rounded-full w-10 h-10" 
-                        onClick={() => handleApprove(w)}
-                        disabled={actionLoading[w.id]}
-                        title="Aprobar"
-                      >
-                        {actionLoading[w.id] === 'approving' ? (
-                          <Loader2 className="animate-spin" size={20} />
-                        ) : (
-                          <Check size={20} />
-                        )}
-                      </Button>
-                      <Button 
-                        variant="danger" 
-                        className="p-2 rounded-full w-10 h-10"
-                        onClick={() => handleReject(w)}
-                        disabled={actionLoading[w.id]}
-                        title="Rechazar"
-                      >
-                        {actionLoading[w.id] === 'rejecting' ? (
-                          <Loader2 className="animate-spin" size={20} />
-                        ) : (
-                          <X size={20} />
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            );
-          })}
+                )}
+              </div>
+            </Card>
+          ))}
         </div>
       )}
     </div>
