@@ -35,7 +35,7 @@ export default function AdminUsers() {
       setLoading(true);
       
       const { data, error } = await supabase
-        .rpc('get_all_clients_summary');
+        .rpc('get_all_clients_with_investments');
 
       if (error) throw error;
       
