@@ -10,33 +10,37 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const { showError, showSuccess } = useToast();
+  const { showError } = useToast();
 
+  // ✅ REDIRECCIÓN: Cuando el usuario se actualiza
   useEffect(() => {
-    if (user && user.role) {
+    if (user?.role && !authLoading) {
       const destination = user.role === 'admin' ? '/admin' : '/client';
       navigate(destination, { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, authLoading, navigate]);
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  setLoading(true);
-  
-  try {
-    const data = await login(email, password);
+    e.preventDefault();
+    setLoading(true);
     
-    if (!data.session || !data.user) {
-      throw new Error('No se pudo iniciar sesión');
+    try {
+      const data = await login(email, password);
+      
+      if (!data?.session || !data?.user) {
+        throw new Error('No se pudo iniciar sesión');
+      }
+      
+      // ✅ Ya no necesitamos hacer nada más aquí
+      // El useEffect de arriba se encargará de la redirección
+      
+    } catch (err) {
+      showError('Credenciales incorrectas. Revisa tu email y tu contraseña.');
+      setLoading(false);
     }
-    
-  
-  } catch (err) {
-    showError('Credenciales incorrectas. Revisa tu email y tu contraseña.'); //o poner err.message para ver el error real
-    setLoading(false);
-  }
-};
+  };
 
+  // ✅ Mostrar loader mientras verifica sesión inicial
   if (authLoading) {
     return (
       <div className="min-h-screen bg-neutral-bg flex items-center justify-center">
@@ -93,8 +97,6 @@ export default function Login() {
               className="w-full px-4 py-3 rounded-lg border border-neutral-border bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
             />
           </div>
-
-        
 
           <button
             type="submit"

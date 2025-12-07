@@ -7,87 +7,118 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ OPTIMIZACIÓN: Fetch más rápido con abort controller
-  const fetchProfile = useCallback(async (authUser, signal) => {
+  // ✅ FUNCIÓN: Limpiar sesión FORZADA
+  const clearSession = useCallback(() => {
     try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('id, email, full_name, role')
-        .eq('id', authUser.id)
-        .abortSignal(signal)
-        .maybeSingle();
-
-      if (error && error.code !== 'PGRST116') {
-        console.warn('Profile fetch error:', error.message);
-        return { 
-          ...authUser, 
-          role: 'cliente',
-          full_name: authUser.email.split('@')[0]
-        };
-      }
-
-      return profile ? { ...authUser, ...profile } : {
-        ...authUser,
-        role: 'cliente',
-        full_name: authUser.user_metadata?.full_name || authUser.email.split('@')[0]
-      };
+      // NO AWAIT - Limpieza inmediata sin esperar a Supabase
+      supabase.auth.signOut().catch(() => {}); // Fire and forget
+      localStorage.clear();
+      sessionStorage.clear();
+      setUser(null);
     } catch (error) {
-      if (error.name === 'AbortError') throw error;
-      return { 
-        ...authUser, 
-        role: 'cliente',
-        full_name: authUser.email.split('@')[0]
-      };
+      console.error('Error clearing session:', error);
+      localStorage.clear();
+      sessionStorage.clear();
+      setUser(null);
     }
   }, []);
 
+  // ✅ EFECTO: Inicialización AGRESIVA con timeout instantáneo
   useEffect(() => {
-    const abortController = new AbortController();
     let mounted = true;
-    
+    let timeoutId = null;
+    let forceStopTimeout = null;
+
     const initSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user && mounted) {
-          const userData = await fetchProfile(session.user, abortController.signal);
-          if (mounted) setUser(userData);
+        // 🔥 TIMEOUT AGRESIVO: 3 segundos máximo
+        forceStopTimeout = setTimeout(() => {
+          if (mounted) {
+            console.warn('⚠️ Supabase no responde. Forzando logout...');
+            localStorage.clear();
+            sessionStorage.clear();
+            setUser(null);
+            setLoading(false);
+          }
+        }, 3000);
+
+        // Intentar obtener sesión con timeout
+        const controller = new AbortController();
+        timeoutId = setTimeout(() => controller.abort(), 2000);
+
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        clearTimeout(timeoutId);
+        clearTimeout(forceStopTimeout);
+
+        // Si hay error o no hay sesión, limpiar TODO
+        if (error || !session?.user) {
+          if (mounted) {
+            console.log('❌ Sin sesión válida, limpiando...');
+            localStorage.clear();
+            sessionStorage.clear();
+            setUser(null);
+          }
+        } else if (mounted) {
+          // Sesión válida, intentar cargar perfil (con timeout también)
+          try {
+            const profileTimeout = setTimeout(() => {
+              throw new Error('Profile timeout');
+            }, 2000);
+
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('id, email, full_name, role')
+              .eq('id', session.user.id)
+              .maybeSingle();
+
+            clearTimeout(profileTimeout);
+
+            if (mounted) {
+              setUser(profile ? { ...session.user, ...profile } : {
+                ...session.user,
+                role: 'cliente',
+                full_name: session.user.email.split('@')[0]
+              });
+            }
+          } catch (profileError) {
+            console.warn('⚠️ Error cargando perfil:', profileError);
+            if (mounted) {
+              // Si falla el perfil, aún así mostrar sesión básica
+              setUser({
+                ...session.user,
+                role: 'cliente',
+                full_name: session.user.email.split('@')[0]
+              });
+            }
+          }
         }
       } catch (error) {
-        if (error.name !== 'AbortError') {
-          console.error('Session init error:', error);
+        console.error('❌ Error de sesión:', error);
+        if (mounted) {
+          localStorage.clear();
+          sessionStorage.clear();
+          setUser(null);
         }
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          clearTimeout(timeoutId);
+          clearTimeout(forceStopTimeout);
+          setLoading(false);
+        }
       }
     };
 
     initSession();
 
-    // ✅ OPTIMIZACIÓN: Solo escuchar cambios importantes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!mounted) return;
-        
-        // Ignorar eventos que no cambian el estado
-        if (event === 'TOKEN_REFRESHED') return;
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          const userData = await fetchProfile(session.user, abortController.signal);
-          if (mounted) setUser(userData);
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null);
-        }
-      }
-    );
-
     return () => {
       mounted = false;
-      abortController.abort();
-      subscription.unsubscribe();
+      if (timeoutId) clearTimeout(timeoutId);
+      if (forceStopTimeout) clearTimeout(forceStopTimeout);
     };
-  }, [fetchProfile]);
+  }, []);
 
+  // ✅ LOGIN: Con actualización inmediata de estado
   const login = async (email, password) => {
     setLoading(true);
     try {
@@ -97,15 +128,43 @@ export const AuthProvider = ({ children }) => {
       });
       
       if (error) throw error;
+      
+      // ✅ IMPORTANTE: Actualizar el estado inmediatamente después del login
+      if (data.session?.user) {
+        try {
+          // Intentar cargar perfil
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('id, email, full_name, role')
+            .eq('id', data.session.user.id)
+            .maybeSingle();
+
+          // Actualizar estado inmediatamente
+          setUser(profile ? { ...data.session.user, ...profile } : {
+            ...data.session.user,
+            role: 'cliente',
+            full_name: data.session.user.email.split('@')[0]
+          });
+        } catch (profileError) {
+          console.warn('Error cargando perfil después del login:', profileError);
+          // Si falla el perfil, usar datos básicos
+          setUser({
+            ...data.session.user,
+            role: 'cliente',
+            full_name: data.session.user.email.split('@')[0]
+          });
+        }
+      }
+      
       return data;
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
+  // ✅ LOGOUT: Limpieza inmediata sin esperar
+  const logout = () => {
+    clearSession();
   };
 
   return (
