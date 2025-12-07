@@ -63,7 +63,7 @@ class DataCache {
   }
 }
 
-const clientCache = new DataCache(300000); // 5 minutos
+const clientCache = new DataCache(30000); // 30
 
 export default function ClientDashboard() {
   const { user } = useAuth();

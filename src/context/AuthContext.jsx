@@ -7,103 +7,92 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ FUNCIÓN: Limpiar sesión FORZADA
+  // ✅ Limpiar sesión sin ser agresivo
   const clearSession = useCallback(() => {
     try {
-      // NO AWAIT - Limpieza inmediata sin esperar a Supabase
-      supabase.auth.signOut().catch(() => {}); // Fire and forget
-      localStorage.clear();
-      sessionStorage.clear();
+      supabase.auth.signOut().catch(() => {});
       setUser(null);
     } catch (error) {
       console.error('Error clearing session:', error);
-      localStorage.clear();
-      sessionStorage.clear();
       setUser(null);
     }
   }, []);
 
-  // ✅ EFECTO: Inicialización AGRESIVA con timeout instantáneo
+  // ✅ INICIALIZACIÓN CON TIMEOUT RAZONABLE
   useEffect(() => {
     let mounted = true;
-    let timeoutId = null;
-    let forceStopTimeout = null;
+    let sessionTimeout = null;
 
     const initSession = async () => {
       try {
-        // 🔥 TIMEOUT AGRESIVO: 3 segundos máximo
-        forceStopTimeout = setTimeout(() => {
+        // ✅ Timeout de 10 segundos (razonable para cold starts)
+        sessionTimeout = setTimeout(() => {
           if (mounted) {
-            console.warn('⚠️ Supabase no responde. Forzando logout...');
-            localStorage.clear();
-            sessionStorage.clear();
-            setUser(null);
+            console.warn('⏱️ Timeout verificando sesión. Continuando sin autenticación.');
             setLoading(false);
           }
-        }, 3000);
-
-        // Intentar obtener sesión con timeout
-        const controller = new AbortController();
-        timeoutId = setTimeout(() => controller.abort(), 2000);
+        }, 10000);
 
         const { data: { session }, error } = await supabase.auth.getSession();
 
-        clearTimeout(timeoutId);
-        clearTimeout(forceStopTimeout);
+        clearTimeout(sessionTimeout);
 
-        // Si hay error o no hay sesión, limpiar TODO
-        if (error || !session?.user) {
+        if (error) {
+          console.error('Error de sesión:', error);
           if (mounted) {
-            console.log('❌ Sin sesión válida, limpiando...');
-            localStorage.clear();
-            sessionStorage.clear();
             setUser(null);
+            setLoading(false);
           }
-        } else if (mounted) {
-          // Sesión válida, intentar cargar perfil (con timeout también)
-          try {
-            const profileTimeout = setTimeout(() => {
-              throw new Error('Profile timeout');
-            }, 2000);
+          return;
+        }
 
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('id, email, full_name, role')
-              .eq('id', session.user.id)
-              .maybeSingle();
+        if (!session?.user) {
+          if (mounted) {
+            setUser(null);
+            setLoading(false);
+          }
+          return;
+        }
 
-            clearTimeout(profileTimeout);
+        // ✅ Cargar perfil con timeout separado
+        try {
+          const profileController = new AbortController();
+          const profileTimeout = setTimeout(() => profileController.abort(), 5000);
 
-            if (mounted) {
-              setUser(profile ? { ...session.user, ...profile } : {
-                ...session.user,
-                role: 'cliente',
-                full_name: session.user.email.split('@')[0]
-              });
-            }
-          } catch (profileError) {
-            console.warn('⚠️ Error cargando perfil:', profileError);
-            if (mounted) {
-              // Si falla el perfil, aún así mostrar sesión básica
-              setUser({
-                ...session.user,
-                role: 'cliente',
-                full_name: session.user.email.split('@')[0]
-              });
-            }
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('id, email, full_name, role')
+            .eq('id', session.user.id)
+            .abortSignal(profileController.signal)
+            .maybeSingle();
+
+          clearTimeout(profileTimeout);
+
+          if (mounted) {
+            setUser(profile || {
+              ...session.user,
+              role: 'cliente',
+              full_name: session.user.email.split('@')[0]
+            });
+          }
+        } catch (profileError) {
+          console.warn('Error cargando perfil:', profileError);
+          if (mounted) {
+            setUser({
+              ...session.user,
+              role: 'cliente',
+              full_name: session.user.email.split('@')[0]
+            });
           }
         }
       } catch (error) {
-        console.error('❌ Error de sesión:', error);
+        console.error('Error de autenticación:', error);
         if (mounted) {
-          localStorage.clear();
-          sessionStorage.clear();
           setUser(null);
         }
       } finally {
         if (mounted) {
-          clearTimeout(timeoutId);
-          clearTimeout(forceStopTimeout);
+          clearTimeout(sessionTimeout);
           setLoading(false);
         }
       }
@@ -113,12 +102,11 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       mounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
-      if (forceStopTimeout) clearTimeout(forceStopTimeout);
+      if (sessionTimeout) clearTimeout(sessionTimeout);
     };
   }, []);
 
-  // ✅ LOGIN: Con actualización inmediata de estado
+  // ✅ LOGIN con actualización inmediata
   const login = async (email, password) => {
     setLoading(true);
     try {
@@ -129,25 +117,21 @@ export const AuthProvider = ({ children }) => {
       
       if (error) throw error;
       
-      // ✅ IMPORTANTE: Actualizar el estado inmediatamente después del login
       if (data.session?.user) {
         try {
-          // Intentar cargar perfil
           const { data: profile } = await supabase
             .from('profiles')
             .select('id, email, full_name, role')
             .eq('id', data.session.user.id)
             .maybeSingle();
 
-          // Actualizar estado inmediatamente
-          setUser(profile ? { ...data.session.user, ...profile } : {
+          setUser(profile || {
             ...data.session.user,
             role: 'cliente',
             full_name: data.session.user.email.split('@')[0]
           });
         } catch (profileError) {
-          console.warn('Error cargando perfil después del login:', profileError);
-          // Si falla el perfil, usar datos básicos
+          console.warn('Error cargando perfil:', profileError);
           setUser({
             ...data.session.user,
             role: 'cliente',
@@ -162,7 +146,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ✅ LOGOUT: Limpieza inmediata sin esperar
+  // ✅ LOGOUT simple
   const logout = () => {
     clearSession();
   };
