@@ -10,9 +10,9 @@ import { differenceInDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useToast } from '../../context/ToastContext';
 
-// ✅ CACHÉ MEJORADO
+// ✅ CACHÉ OPTIMIZADO (5 minutos)
 class DataCache {
-  constructor(ttl = 30000) {
+  constructor(ttl = 300000) { // 5 minutos
     this.cache = new Map();
     this.pendingRequests = new Map();
     this.ttl = ttl;
@@ -61,101 +61,37 @@ class DataCache {
     this.cache.delete(key);
     this.pendingRequests.delete(key);
   }
-
-  clear() {
-    this.cache.clear();
-    this.pendingRequests.clear();
-  }
 }
 
-const clientCache = new DataCache(30000);
-
-// ✅ FUNCIÓN ACTUALIZADA: Calcular Fondos Disponibles (DIARIO)
-const calculateAvailableFunds = (investment, withdrawals) => {
-  if (!investment?.inversion_actual || !investment?.tasa_diaria) {
-    return {
-      totalEarnings: 0,
-      paidWithdrawals: 0,
-      pendingWithdrawals: 0,
-      availableBalance: 0,
-      days: 0,
-      dailyRate: 0,
-      dailyGain: 0
-    };
-  }
-  
-  // ✅ CAMBIADO: Calcular días en lugar de semanas
-  const days = differenceInDays(new Date(), new Date(investment.created_at)) || 0;
-  const dailyRate = investment.tasa_diaria;
-  const dailyGain = investment.inversion_actual * (dailyRate / 100);
-  const totalEarnings = dailyGain * days;
-  
-  // Calcular retiros PAGADOS
-  const paidWithdrawals = (withdrawals || [])
-    .filter(w => w.estado === 'pagado')
-    .reduce((acc, curr) => acc + Number(curr.monto), 0);
-  
-  // Calcular retiros PENDIENTES (fondos reservados)
-  const pendingWithdrawals = (withdrawals || [])
-    .filter(w => w.estado === 'pendiente')
-    .reduce((acc, curr) => acc + Number(curr.monto), 0);
-  
-  // Balance disponible
-  const availableBalance = Math.max(0, totalEarnings - paidWithdrawals - pendingWithdrawals);
-  
-  return {
-    totalEarnings: totalEarnings.toFixed(2),
-    paidWithdrawals: paidWithdrawals.toFixed(2),
-    pendingWithdrawals: pendingWithdrawals.toFixed(2),
-    availableBalance: availableBalance.toFixed(2),
-    days, // ✅ CAMBIADO
-    dailyRate: dailyRate.toFixed(4), // ✅ CAMBIADO
-    dailyGain: dailyGain.toFixed(2)  // ✅ CAMBIADO
-  };
-};
+const clientCache = new DataCache(300000); // 5 minutos
 
 export default function ClientDashboard() {
   const { user } = useAuth();
-  const { showSuccess, showError, showInfo } = useToast();
+  const { showSuccess, showError } = useToast();
   
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [investment, setInvestment] = useState(null);
   const [withdrawals, setWithdrawals] = useState([]);
+  const [availableBalance, setAvailableBalance] = useState(0);
+  const [totalEarnings, setTotalEarnings] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
   const isMountedRef = useRef(true);
-  const abortControllerRef = useRef(null);
 
-  // ✅ FETCH OPTIMIZADO
+  // ✅ FETCH CON RPC (1 llamada en lugar de 2)
   const fetchClientData = useCallback(async (userId) => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    
-    abortControllerRef.current = new AbortController();
-
     return clientCache.getOrFetch(userId, async () => {
-      const [invResult, wdResult] = await Promise.all([
-        supabase
-          .from('investments')
-          .select('*')
-          .eq('user_id', userId)
-          .maybeSingle(),
-        
-        supabase
-          .from('withdrawals')
-          .select('*')
-          .eq('user_id', userId)
-          .order('fecha_solicitud', { ascending: false })
-      ]);
+      const { data, error } = await supabase
+        .rpc('get_client_dashboard_data', { p_user_id: userId });
 
-      if (invResult.error) console.error('Investment error:', invResult.error);
-      if (wdResult.error) console.error('Withdrawals error:', wdResult.error);
+      if (error) throw error;
 
       return {
-        investment: invResult.data,
-        withdrawals: wdResult.data || []
+        investment: data.investment,
+        withdrawals: data.withdrawals,
+        availableBalance: data.available_balance,
+        totalEarnings: data.total_earnings
       };
     });
   }, []);
@@ -174,9 +110,11 @@ export default function ClientDashboard() {
         if (mounted) {
           setInvestment(data.investment);
           setWithdrawals(data.withdrawals);
+          setAvailableBalance(data.availableBalance);
+          setTotalEarnings(data.totalEarnings);
         }
       } catch (error) {
-        if (mounted && error.name !== 'AbortError') {
+        if (mounted) {
           showError('Error al cargar datos. Por favor, recarga la página.');
         }
       } finally {
@@ -190,24 +128,48 @@ export default function ClientDashboard() {
 
     return () => {
       mounted = false;
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
     };
   }, [user?.id, fetchClientData, showError]);
 
-  // ✅ MEMOIZACIÓN: Calcular fondos
-  const funds = useMemo(() => 
-    calculateAvailableFunds(investment, withdrawals), 
-    [investment, withdrawals]
-  );
+  // ✅ CALCULAR DATOS DERIVADOS
+  const funds = useMemo(() => {
+    if (!investment?.inversion_actual || !investment?.tasa_diaria) {
+      return {
+        days: 0,
+        dailyRate: 0,
+        dailyGain: 0,
+        paidWithdrawals: 0,
+        pendingWithdrawals: 0
+      };
+    }
+    
+    const days = differenceInDays(new Date(), new Date(investment.created_at)) || 0;
+    const dailyRate = investment.tasa_diaria;
+    const dailyGain = investment.inversion_actual * (dailyRate / 100);
+    
+    const paidWithdrawals = (withdrawals || [])
+      .filter(w => w.estado === 'pagado')
+      .reduce((acc, curr) => acc + Number(curr.monto), 0);
+    
+    const pendingWithdrawals = (withdrawals || [])
+      .filter(w => w.estado === 'pendiente')
+      .reduce((acc, curr) => acc + Number(curr.monto), 0);
+    
+    return {
+      days,
+      dailyRate: dailyRate.toFixed(4),
+      dailyGain: dailyGain.toFixed(2),
+      paidWithdrawals: paidWithdrawals.toFixed(2),
+      pendingWithdrawals: pendingWithdrawals.toFixed(2)
+    };
+  }, [investment, withdrawals]);
 
   // ✅ HANDLER: Solicitar Retiro
   const handleWithdrawRequest = async (e) => {
     e.preventDefault();
     
     const amount = Number(withdrawAmount);
-    const available = Number(funds.availableBalance);
+    const available = Number(availableBalance);
 
     if (amount < 50) {
       showError('El retiro mínimo es de $50');
@@ -227,18 +189,6 @@ export default function ClientDashboard() {
 
     setSubmitting(true);
 
-    // UI Optimista
-    const optimisticWithdrawal = {
-      id: 'temp-' + Date.now(),
-      user_id: user.id,
-      monto: amount,
-      estado: 'pendiente',
-      fecha_solicitud: new Date().toISOString()
-    };
-
-    setWithdrawals(prev => [optimisticWithdrawal, ...prev]);
-    setWithdrawAmount('');
-
     try {
       const { data, error } = await supabase
         .from('withdrawals')
@@ -252,10 +202,11 @@ export default function ClientDashboard() {
 
       if (error) throw error;
 
-      setWithdrawals(prev => 
-        prev.map(w => w.id === optimisticWithdrawal.id ? data : w)
-      );
-
+      // Actualizar estado local
+      setWithdrawals(prev => [data, ...prev]);
+      setAvailableBalance(prev => prev - amount);
+      setWithdrawAmount('');
+      
       clientCache.invalidate(user.id);
       
       showSuccess(
@@ -264,10 +215,6 @@ export default function ClientDashboard() {
       );
       
     } catch (error) {
-      setWithdrawals(prev => 
-        prev.filter(w => w.id !== optimisticWithdrawal.id)
-      );
-      
       showError('Error al procesar la solicitud: ' + error.message);
     } finally {
       setSubmitting(false);
@@ -318,7 +265,6 @@ export default function ClientDashboard() {
           <h2 className="text-2xl font-bold text-primary-dark">Mi Inversión</h2>
           <div className="flex items-center gap-2 text-sm text-neutral-gray bg-white px-3 py-2 rounded-lg shadow-sm">
             <Calendar size={16} />
-            {/* ✅ CAMBIADO: semanas → días */}
             <span>{funds.days} días activos</span>
           </div>
         </div>
@@ -332,7 +278,6 @@ export default function ClientDashboard() {
             </h3>
             <div className="flex items-center gap-2 text-sm bg-white/10 w-fit px-2 py-1 rounded mt-2">
               <TrendingUp size={16} />
-              {/* ✅ CAMBIADO: Mostrar tasa diaria */}
               <span>{funds.dailyRate}% Diaria</span>
             </div>
             <p className="text-xs text-white/70 mt-2">
@@ -342,17 +287,16 @@ export default function ClientDashboard() {
 
           {/* Card 2: Ganancia Diaria */}
           <Card className="bg-gradient-to-br from-green-500 to-green-700 text-white border-none">
-            {/* ✅ CAMBIADO: Ganancia por Día */}
             <p className="text-green-100 text-sm mb-1">Ganancia por Día</p>
             <h3 className="text-3xl font-bold mb-2">
               ${funds.dailyGain}
             </h3>
             <p className="text-xs text-white/80 mt-2">
-              Total acumulado: ${funds.totalEarnings}
+              Total acumulado: ${Number(totalEarnings).toFixed(2)}
             </p>
           </Card>
 
-          {/* Card 3: Disponible CON ALERTAS */}
+          {/* Card 3: Disponible */}
           <Card className={`border-2 ${
             Number(funds.pendingWithdrawals) > 0 
               ? 'border-amber-400 bg-amber-50' 
@@ -364,7 +308,7 @@ export default function ClientDashboard() {
                 ? 'text-amber-600' 
                 : 'text-status-success'
             }`}>
-              ${funds.availableBalance}
+              ${Number(availableBalance).toFixed(2)}
             </h3>
             
             {Number(funds.pendingWithdrawals) > 0 && (
@@ -412,7 +356,7 @@ export default function ClientDashboard() {
               <div className="bg-white p-4 rounded-lg border border-primary-light/50 shadow-sm">
                 <p className="text-xs text-neutral-gray mb-1">Disponible</p>
                 <p className="text-2xl font-bold text-status-success">
-                  ${funds.availableBalance}
+                  ${Number(availableBalance).toFixed(2)}
                 </p>
                 {Number(funds.pendingWithdrawals) > 0 && (
                   <p className="text-xs text-amber-600 mt-1">
@@ -429,15 +373,15 @@ export default function ClientDashboard() {
                 value={withdrawAmount}
                 onChange={e => setWithdrawAmount(e.target.value)}
                 min="50"
-                max={funds.availableBalance}
-                disabled={submitting || Number(funds.availableBalance) < 50}
+                max={availableBalance}
+                disabled={submitting || Number(availableBalance) < 50}
               />
               
               <Button 
                 type="submit"
                 variant="success" 
                 className="w-full" 
-                disabled={submitting || Number(funds.availableBalance) < 50}
+                disabled={submitting || Number(availableBalance) < 50}
               >
                 {submitting ? (
                   <>
@@ -449,7 +393,7 @@ export default function ClientDashboard() {
                 )}
               </Button>
               
-              {Number(funds.availableBalance) < 50 && (
+              {Number(availableBalance) < 50 && (
                 <p className="text-xs text-neutral-gray text-center">
                   Necesitas al menos $50 para retirar
                 </p>

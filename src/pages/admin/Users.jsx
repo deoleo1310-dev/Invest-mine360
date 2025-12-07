@@ -25,42 +25,32 @@ export default function AdminUsers() {
     password: '',
     confirmPassword: '', 
     inversion_actual: '',
-    tasa_diaria: '', // ✅ CAMBIADO: tasa_mensual → tasa_diaria
+    tasa_diaria: '',
     add_investment: ''
   });
 
+  // ✅ OPTIMIZADO: 1 RPC en lugar de 100+ queries
   const loadUsers = async () => {
     try {
       setLoading(true);
       
-      // 1. Obtener perfiles con inversiones
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*, investments(*)')
-        .eq('role', 'cliente')
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .rpc('get_all_clients_summary');
 
-      if (profilesError) throw profilesError;
+      if (error) throw error;
       
-      // 2. Calcular ganancias totales para cada usuario
-      const usersWithEarnings = await Promise.all(
-        profiles.map(async (user) => {
-          const { data: earnings, error: earningsError } = await supabase
-            .rpc('get_user_total_earnings', { p_user_id: user.id });
-          
-          if (earningsError) {
-            console.error('Error earnings:', earningsError);
-          }
-          
-          return {
-            ...user,
-            investment: user.investments?.[0] || null,
-            totalEarnings: earnings?.[0]?.total_earnings || 0,
-            daysCount: earnings?.[0]?.days_count || 0, // ✅ CAMBIADO: weeks_count → days_count
-            dailyRate: earnings?.[0]?.daily_rate || 0  // ✅ CAMBIADO: weekly_rate → daily_rate
-          };
-        })
-      );
+      // Transformar datos para compatibilidad con UI existente
+      const usersWithEarnings = data.map(user => ({
+        ...user,
+        id: user.user_id,
+        investment: user.investment_amount > 0 ? {
+          inversion_actual: user.investment_amount,
+          tasa_diaria: user.daily_rate
+        } : null,
+        totalEarnings: user.total_earnings,
+        daysCount: user.days_count,
+        dailyRate: user.daily_rate
+      }));
       
       setUsers(usersWithEarnings);
     } catch (error) {
@@ -83,7 +73,7 @@ export default function AdminUsers() {
         password: '',
         confirmPassword: '',
         inversion_actual: user.investment?.inversion_actual || 0,
-        tasa_diaria: user.investment?.tasa_diaria || 0, // ✅ CAMBIADO
+        tasa_diaria: user.investment?.tasa_diaria || 0,
         add_investment: ''
       });
     } else {
@@ -93,14 +83,13 @@ export default function AdminUsers() {
         password: '',
         confirmPassword: '',
         inversion_actual: '',
-        tasa_diaria: '', // ✅ CAMBIADO
+        tasa_diaria: '',
         add_investment: ''
       });
     }
     setIsModalOpen(true);
   };
 
-  // Función para resetear contraseña
   const resetPassword = async (userId, newPassword) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -178,23 +167,32 @@ export default function AdminUsers() {
         }
 
         if (editingUser.investment) {
-          const { error: updateInvError } = await supabase
+          // ✅ CAMBIADO: Obtener ID de inversión correctamente
+          const { data: inv } = await supabase
             .from('investments')
-            .update({
-              inversion_actual: newInvestmentAmount,
-              tasa_diaria: Number(formData.tasa_diaria), // ✅ CAMBIADO
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', editingUser.investment.id);
+            .select('id')
+            .eq('user_id', editingUser.id)
+            .single();
 
-          if (updateInvError) throw updateInvError;
+          if (inv) {
+            const { error: updateInvError } = await supabase
+              .from('investments')
+              .update({
+                inversion_actual: newInvestmentAmount,
+                tasa_diaria: Number(formData.tasa_diaria),
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', inv.id);
+
+            if (updateInvError) throw updateInvError;
+          }
         } else {
           const { error: createInvError } = await supabase
             .from('investments')
             .insert({
               user_id: editingUser.id,
               inversion_actual: newInvestmentAmount,
-              tasa_diaria: Number(formData.tasa_diaria) // ✅ CAMBIADO
+              tasa_diaria: Number(formData.tasa_diaria)
             });
 
           if (createInvError) throw createInvError;
@@ -213,7 +211,7 @@ export default function AdminUsers() {
         }
 
         if (!formData.tasa_diaria || Number(formData.tasa_diaria) <= 0) {
-          throw new Error("Debes ingresar una tasa diaria"); // ✅ CAMBIADO
+          throw new Error("Debes ingresar una tasa diaria");
         }
 
         // 1. Crear usuario
@@ -260,7 +258,7 @@ export default function AdminUsers() {
           .insert({
             user_id: newUserId,
             inversion_actual: Number(formData.inversion_actual),
-            tasa_diaria: Number(formData.tasa_diaria), // ✅ CAMBIADO
+            tasa_diaria: Number(formData.tasa_diaria),
             ganancia_acumulada: 0,
             created_at: new Date().toISOString()
           });
@@ -317,26 +315,23 @@ export default function AdminUsers() {
                 
                 <div className="flex flex-wrap gap-2 mb-4">
                   <Badge variant="primary">
-                    Inv: ${user.investment?.inversion_actual?.toLocaleString() || 0}
+                    Inv: ${user.investment_amount?.toLocaleString() || 0}
                   </Badge>
                   <Badge variant="success">
-                    {/* ✅ CAMBIADO: Mostrar tasa diaria */}
-                    Tasa: {user.investment?.tasa_diaria || 0}% diaria
+                    Tasa: {user.daily_rate || 0}% diaria
                   </Badge>
                 </div>
                 
                 <div className="flex items-center gap-2 text-status-success font-medium bg-status-success/5 p-2 rounded-lg">
                   <TrendingUp size={16} />
                   <span>
-                    {/* ✅ CAMBIADO: Mostrar ganancia diaria acumulada */}
-                    Ganancia diaria acumulada: ${Number(user.totalEarnings || 0).toLocaleString('es-DO', {
+                    Ganancia acumulada: ${Number(user.totalEarnings || 0).toLocaleString('es-DO', {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2
                     })}
                   </span>
                   {user.daysCount > 0 && (
                     <span className="text-xs text-neutral-gray ml-2">
-                      {/* ✅ CAMBIADO: semanas → días */}
                       ({user.daysCount} días × {user.dailyRate}%)
                     </span>
                   )}
@@ -450,7 +445,6 @@ export default function AdminUsers() {
               required={!editingUser}
               placeholder="1000"
             />
-            {/* ✅ CAMBIADO: Label y placeholder */}
             <Input 
               label="Tasa Diaria (%)"
               type="number"
