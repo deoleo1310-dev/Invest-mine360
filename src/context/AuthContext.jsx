@@ -1,3 +1,5 @@
+// ✅ REEMPLAZAR src/context/AuthContext.jsx
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -7,7 +9,6 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Limpiar sesión sin ser agresivo
   const clearSession = useCallback(() => {
     try {
       supabase.auth.signOut().catch(() => {});
@@ -18,27 +19,27 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // ✅ INICIALIZACIÓN CON TIMEOUT RAZONABLE
+  // ✅ INICIALIZACIÓN OPTIMIZADA CON TIMEOUT REDUCIDO
   useEffect(() => {
     let mounted = true;
     let sessionTimeout = null;
 
     const initSession = async () => {
       try {
-        // ✅ Timeout de 10 segundos (razonable para cold starts)
+        // ✅ TIMEOUT DE 3 SEGUNDOS (suficiente para Vercel + Supabase)
         sessionTimeout = setTimeout(() => {
           if (mounted) {
-            console.warn('⏱️ Timeout verificando sesión. Continuando sin autenticación.');
+            console.warn('⏱️ Timeout de sesión. Continuando como invitado.');
             setLoading(false);
           }
-        }, 10000);
+        }, 3000);
 
+        // ✅ USAR getSession() en lugar de getUser() (más rápido)
         const { data: { session }, error } = await supabase.auth.getSession();
 
         clearTimeout(sessionTimeout);
 
-        if (error) {
-          console.error('Error de sesión:', error);
+        if (error || !session?.user) {
           if (mounted) {
             setUser(null);
             setLoading(false);
@@ -46,24 +47,16 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (!session?.user) {
-          if (mounted) {
-            setUser(null);
-            setLoading(false);
-          }
-          return;
-        }
-
-        // ✅ Cargar perfil con timeout separado
+        // ✅ CARGAR PERFIL CON ABORT SIGNAL
         try {
-          const profileController = new AbortController();
-          const profileTimeout = setTimeout(() => profileController.abort(), 5000);
+          const controller = new AbortController();
+          const profileTimeout = setTimeout(() => controller.abort(), 2000);
 
           const { data: profile } = await supabase
             .from('profiles')
             .select('id, email, full_name, role')
             .eq('id', session.user.id)
-            .abortSignal(profileController.signal)
+            .abortSignal(controller.signal)
             .maybeSingle();
 
           clearTimeout(profileTimeout);
@@ -87,9 +80,7 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (error) {
         console.error('Error de autenticación:', error);
-        if (mounted) {
-          setUser(null);
-        }
+        if (mounted) setUser(null);
       } finally {
         if (mounted) {
           clearTimeout(sessionTimeout);
@@ -100,13 +91,43 @@ export const AuthProvider = ({ children }) => {
 
     initSession();
 
+    // ✅ LISTENER PARA CAMBIOS DE AUTH
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+        } else if (event === 'SIGNED_IN' && session?.user) {
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('id, email, full_name, role')
+              .eq('id', session.user.id)
+              .maybeSingle();
+
+            setUser(profile || {
+              ...session.user,
+              role: 'cliente',
+              full_name: session.user.email.split('@')[0]
+            });
+          } catch {
+            setUser({
+              ...session.user,
+              role: 'cliente',
+              full_name: session.user.email.split('@')[0]
+            });
+          }
+        }
+      }
+    );
+
     return () => {
       mounted = false;
       if (sessionTimeout) clearTimeout(sessionTimeout);
+      subscription?.unsubscribe();
     };
   }, []);
 
-  // ✅ LOGIN con actualización inmediata
+  // ✅ LOGIN OPTIMIZADO
   const login = async (email, password) => {
     setLoading(true);
     try {
@@ -130,8 +151,7 @@ export const AuthProvider = ({ children }) => {
             role: 'cliente',
             full_name: data.session.user.email.split('@')[0]
           });
-        } catch (profileError) {
-          console.warn('Error cargando perfil:', profileError);
+        } catch {
           setUser({
             ...data.session.user,
             role: 'cliente',
@@ -146,7 +166,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ✅ LOGOUT simple
   const logout = () => {
     clearSession();
   };

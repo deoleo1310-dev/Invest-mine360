@@ -1,73 +1,87 @@
-import React, { useState, useEffect } from 'react';
+// ✅ REEMPLAZAR AdminWithdrawals.jsx CON ESTA VERSIÓN OPTIMIZADA
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Check, X, Loader2, DollarSign } from 'lucide-react';
+import { Check, X, Loader2, DollarSign, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
-import { format, differenceInDays } from 'date-fns';
+import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-// ✅ FUNCIÓN ACTUALIZADA: Calcular balance ANTES del retiro actual (DIARIO)
-const calculateUserBalance = async (userId, excludeWithdrawalId = null) => {
-  try {
-    const { data: investment, error: invError } = await supabase
-      .from('investments')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (invError || !investment) return null;
-
-    // ✅ CAMBIADO: Calcular días en lugar de semanas
-    const days = differenceInDays(new Date(), new Date(investment.created_at)) || 0;
-    const dailyGain = investment.inversion_actual * (investment.tasa_diaria / 100);
-    const totalEarnings = dailyGain * days;
-
-    const { data: withdrawals, error: wdError } = await supabase
-      .from('withdrawals')
-      .select('id, monto, estado')
-      .eq('user_id', userId);
-
-    if (wdError) return null;
-
-    const paidWithdrawals = withdrawals
-      .filter(w => w.estado === 'pagado')
-      .reduce((sum, w) => sum + Number(w.monto), 0);
-    
-    // ⚠️ Excluir el retiro que estamos evaluando
-    const pendingWithdrawals = withdrawals
-      .filter(w => w.estado === 'pendiente' && w.id !== excludeWithdrawalId)
-      .reduce((sum, w) => sum + Number(w.monto), 0);
-
-    return Math.max(0, totalEarnings - paidWithdrawals - pendingWithdrawals);
-  } catch (error) {
-    console.error('Error calculating balance:', error);
-    return null;
+// ✅ CACHÉ OPTIMIZADO (5 minutos)
+class WithdrawalCache {
+  constructor(ttl = 300000) {
+    this.cache = null;
+    this.timestamp = null;
+    this.ttl = ttl;
   }
-};
+
+  get() {
+    if (!this.cache || Date.now() - this.timestamp > this.ttl) {
+      return null;
+    }
+    return this.cache;
+  }
+
+  set(data) {
+    this.cache = data;
+    this.timestamp = Date.now();
+  }
+
+  invalidate() {
+    this.cache = null;
+    this.timestamp = null;
+  }
+}
+
+const cache = new WithdrawalCache();
 
 export default function AdminWithdrawals() {
   const [withdrawals, setWithdrawals] = useState([]);
-  const [userBalances, setUserBalances] = useState({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('pendiente');
   const [actionLoading, setActionLoading] = useState({});
   const { showSuccess, showError, showInfo } = useToast();
 
-  const loadData = async () => {
+  // ✅ CARGA OPTIMIZADA: 1 RPC en lugar de N queries
+  const loadData = async (useCache = true) => {
     try {
       setLoading(true);
 
-      const { data: withdrawalsData, error: wdError } = await supabase
-        .from('withdrawals')
-        .select('*, profiles(full_name, email)')
-        .order('fecha_solicitud', { ascending: false });
+      // ✅ Intentar usar caché primero
+      if (useCache) {
+        const cached = cache.get();
+        if (cached) {
+          setWithdrawals(cached);
+          setLoading(false);
+          return;
+        }
+      }
 
-      if (wdError) throw wdError;
+      // ✅ UNA SOLA LLAMADA RPC
+      const { data, error } = await supabase
+        .rpc('get_withdrawals_with_balances');
 
-      setWithdrawals(withdrawalsData);
-      setUserBalances({});
+      if (error) throw error;
+
+      // Transformar datos para UI
+      const transformed = data.map(w => ({
+        id: w.withdrawal_id,
+        user_id: w.user_id,
+        monto: w.monto,
+        estado: w.estado,
+        fecha_solicitud: w.fecha_solicitud,
+        available_balance: w.available_balance,
+        profiles: {
+          full_name: w.user_name,
+          email: w.user_email
+        }
+      }));
+
+      cache.set(transformed);
+      setWithdrawals(transformed);
     } catch (error) {
       console.error('Load error:', error);
       showError('Error al cargar retiros');
@@ -77,29 +91,21 @@ export default function AdminWithdrawals() {
   };
 
   useEffect(() => {
-    loadData();
+    loadData(true);
   }, []);
 
+  // ✅ VALIDACIÓN SIN LLAMADAS ADICIONALES (usamos balance pre-calculado)
   const handleApprove = async (withdrawal) => {
-    // ⚠️ Excluir el retiro actual del cálculo
-    const balance = userBalances[withdrawal.user_id] ?? 
-                    await calculateUserBalance(withdrawal.user_id, withdrawal.id);
-    
-    if (balance === null) {
-      showError('No se pudo verificar el balance del usuario');
-      return;
-    }
-
-    const available = Number(balance);
+    const available = Number(withdrawal.available_balance);
     const requested = Number(withdrawal.monto);
 
     if (requested > available) {
       showError(
         `❌ FONDOS INSUFICIENTES\n\n` +
         `Usuario: ${withdrawal.profiles?.full_name}\n` +
-        `Solicitado: ${requested.toFixed(2)}\n` +
-        `Disponible: ${available.toFixed(2)}\n` +
-        `Faltante: ${(requested - available).toFixed(2)}`
+        `Solicitado: $${requested.toFixed(2)}\n` +
+        `Disponible: $${available.toFixed(2)}\n` +
+        `Faltante: $${(requested - available).toFixed(2)}`
       );
       return;
     }
@@ -117,8 +123,9 @@ export default function AdminWithdrawals() {
 
       if (error) throw error;
 
-      showSuccess(`✅ Pago de ${requested.toFixed(2)} aprobado`);
-      await loadData();
+      showSuccess(`✅ Pago de $${requested.toFixed(2)} aprobado`);
+      cache.invalidate();
+      await loadData(false); // ✅ Recargar sin caché
     } catch (error) {
       console.error('Approve error:', error);
       showError('Error al aprobar: ' + error.message);
@@ -148,7 +155,8 @@ export default function AdminWithdrawals() {
       if (error) throw error;
 
       showInfo(`Retiro de $${withdrawal.monto} rechazado`);
-      await loadData();
+      cache.invalidate();
+      await loadData(false);
     } catch (error) {
       console.error('Reject error:', error);
       showError('Error: ' + error.message);
@@ -161,15 +169,25 @@ export default function AdminWithdrawals() {
     }
   };
 
-  const filteredWithdrawals = filter === 'todos' 
-    ? withdrawals 
-    : withdrawals.filter(w => w.estado === filter);
+  // ✅ FILTRADO EN MEMORIA (no en DB)
+  const filteredWithdrawals = useMemo(() => {
+    if (filter === 'todos') return withdrawals;
+    return withdrawals.filter(w => w.estado === filter);
+  }, [withdrawals, filter]);
+
+  // ✅ CONTADORES OPTIMIZADOS
+  const counts = useMemo(() => ({
+    pendiente: withdrawals.filter(w => w.estado === 'pendiente').length,
+    pagado: withdrawals.filter(w => w.estado === 'pagado').length,
+    rechazado: withdrawals.filter(w => w.estado === 'rechazado').length,
+    todos: withdrawals.length
+  }), [withdrawals]);
 
   const tabs = [
-    { id: 'pendiente', label: 'Pendientes', count: withdrawals.filter(w => w.estado === 'pendiente').length },
-    { id: 'pagado', label: 'Pagados', count: withdrawals.filter(w => w.estado === 'pagado').length },
-    { id: 'rechazado', label: 'Rechazados', count: withdrawals.filter(w => w.estado === 'rechazado').length },
-    { id: 'todos', label: 'Todos', count: withdrawals.length },
+    { id: 'pendiente', label: 'Pendientes', count: counts.pendiente },
+    { id: 'pagado', label: 'Pagados', count: counts.pagado },
+    { id: 'rechazado', label: 'Rechazados', count: counts.rechazado },
+    { id: 'todos', label: 'Todos', count: counts.todos },
   ];
 
   const getBadgeVariant = (status) => {
@@ -184,7 +202,7 @@ export default function AdminWithdrawals() {
         <h2 className="text-2xl font-bold text-primary-dark">Gestión de Retiros</h2>
         <div className="flex items-center gap-2 text-sm text-neutral-gray bg-white px-3 py-2 rounded-lg shadow-sm">
           <DollarSign size={16} />
-          <span>{tabs[0].count} pendientes</span>
+          <span>{counts.pendiente} pendientes</span>
         </div>
       </div>
 
@@ -234,6 +252,22 @@ export default function AdminWithdrawals() {
                 <p className="text-xs text-neutral-gray mt-1">
                   {format(new Date(w.fecha_solicitud), "d 'de' MMMM, yyyy", { locale: es })}
                 </p>
+                
+                {/* ✅ INDICADOR DE BALANCE */}
+                {w.estado === 'pendiente' && (
+                  <div className="mt-2 flex items-center gap-2 text-xs">
+                    {Number(w.monto) > Number(w.available_balance) ? (
+                      <div className="flex items-center gap-1 text-red-600 bg-red-50 px-2 py-1 rounded">
+                        <AlertTriangle size={14} />
+                        <span>Balance insuficiente: ${Number(w.available_balance).toFixed(2)}</span>
+                      </div>
+                    ) : (
+                      <div className="text-green-600">
+                        ✓ Balance disponible: ${Number(w.available_balance).toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-3">
