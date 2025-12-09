@@ -1,5 +1,4 @@
-//tablas y columnas
-
+/// supabase tablas con sus columnas
 table_name,column_name,data_type,is_nullable,column_default
 daily_earnings,id,uuid,NO,gen_random_uuid()
 daily_earnings,user_id,uuid,NO,null
@@ -39,9 +38,50 @@ withdrawals,fecha_procesado,timestamp with time zone,YES,null
 withdrawals,created_at,timestamp with time zone,YES,now()
 
 
-//policies 
+/// supabase indices 
 
-schemaname,tablename,policyname,permissive,roles,command,using_expression,with_check
+table_name,index_name,index_definition,is_unique,is_primary
+daily_earnings,daily_earnings_pkey,CREATE UNIQUE INDEX daily_earnings_pkey ON public.daily_earnings USING btree (id),true,true
+daily_earnings,idx_daily_earnings_date,CREATE INDEX idx_daily_earnings_date ON public.daily_earnings USING btree (date DESC),false,false
+daily_earnings,idx_daily_earnings_lookup,"CREATE INDEX idx_daily_earnings_lookup ON public.daily_earnings USING btree (user_id, date DESC) INCLUDE (earning_amount)",false,false
+daily_earnings,idx_daily_earnings_user,CREATE INDEX idx_daily_earnings_user ON public.daily_earnings USING btree (user_id),false,false
+daily_earnings,idx_daily_earnings_user_date,"CREATE INDEX idx_daily_earnings_user_date ON public.daily_earnings USING btree (user_id, date DESC)",false,false
+daily_earnings,idx_daily_earnings_user_date_earning,"CREATE INDEX idx_daily_earnings_user_date_earning ON public.daily_earnings USING btree (user_id, date DESC) INCLUDE (earning_amount)",false,false
+daily_earnings,idx_daily_earnings_user_sum,CREATE INDEX idx_daily_earnings_user_sum ON public.daily_earnings USING btree (user_id) INCLUDE (earning_amount),false,false
+daily_earnings,idx_daily_earnings_user_summary,CREATE INDEX idx_daily_earnings_user_summary ON public.daily_earnings USING btree (user_id) INCLUDE (earning_amount),false,false
+daily_earnings,unique_user_day,"CREATE UNIQUE INDEX unique_user_day ON public.daily_earnings USING btree (user_id, date)",true,false
+investment_history,idx_investment_history_date,CREATE INDEX idx_investment_history_date ON public.investment_history USING btree (effective_date DESC),false,false
+investment_history,idx_investment_history_investment,CREATE INDEX idx_investment_history_investment ON public.investment_history USING btree (investment_id),false,false
+investment_history,idx_investment_history_user,CREATE INDEX idx_investment_history_user ON public.investment_history USING btree (user_id),false,false
+investment_history,investment_history_pkey,CREATE UNIQUE INDEX investment_history_pkey ON public.investment_history USING btree (id),true,true
+investment_history,unique_investment_date,"CREATE UNIQUE INDEX unique_investment_date ON public.investment_history USING btree (investment_id, effective_date)",true,false
+investments,idx_investments_created_at,CREATE INDEX idx_investments_created_at ON public.investments USING btree (created_at DESC),false,false
+investments,idx_investments_user_active,"CREATE INDEX idx_investments_user_active ON public.investments USING btree (user_id, inversion_actual) WHERE (inversion_actual > (0)::numeric)",false,false
+investments,idx_investments_user_created,"CREATE INDEX idx_investments_user_created ON public.investments USING btree (user_id, created_at DESC)",false,false
+investments,investments_pkey,CREATE UNIQUE INDEX investments_pkey ON public.investments USING btree (id),true,true
+profiles,idx_profiles_auth_role,"CREATE INDEX idx_profiles_auth_role ON public.profiles USING btree (id, role) WHERE (role = 'admin'::text)",false,false
+profiles,idx_profiles_cliente_active,"CREATE INDEX idx_profiles_cliente_active ON public.profiles USING btree (id, email, created_at DESC) WHERE (role = 'cliente'::text)",false,false
+profiles,idx_profiles_created_at,CREATE INDEX idx_profiles_created_at ON public.profiles USING btree (created_at DESC),false,false
+profiles,idx_profiles_email_role,"CREATE INDEX idx_profiles_email_role ON public.profiles USING btree (email, role)",false,false
+profiles,idx_profiles_role,CREATE INDEX idx_profiles_role ON public.profiles USING btree (role),false,false
+profiles,profiles_email_key,CREATE UNIQUE INDEX profiles_email_key ON public.profiles USING btree (email),true,false
+profiles,profiles_pkey,CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id),true,true
+withdrawals,idx_withdrawals_estado,CREATE INDEX idx_withdrawals_estado ON public.withdrawals USING btree (estado),false,false
+withdrawals,idx_withdrawals_estado_created,"CREATE INDEX idx_withdrawals_estado_created ON public.withdrawals USING btree (estado, created_at DESC) INCLUDE (user_id, monto)",false,false
+withdrawals,idx_withdrawals_estado_fecha,"CREATE INDEX idx_withdrawals_estado_fecha ON public.withdrawals USING btree (estado, fecha_solicitud DESC)",false,false
+withdrawals,idx_withdrawals_fecha_solicitud,CREATE INDEX idx_withdrawals_fecha_solicitud ON public.withdrawals USING btree (fecha_solicitud DESC),false,false
+withdrawals,idx_withdrawals_pending_only,"CREATE INDEX idx_withdrawals_pending_only ON public.withdrawals USING btree (user_id, monto, fecha_solicitud DESC) WHERE (estado = 'pendiente'::text)",false,false
+withdrawals,idx_withdrawals_pending_user,"CREATE INDEX idx_withdrawals_pending_user ON public.withdrawals USING btree (user_id, monto) WHERE (estado = 'pendiente'::text)",false,false
+withdrawals,idx_withdrawals_user_estado,"CREATE INDEX idx_withdrawals_user_estado ON public.withdrawals USING btree (user_id, estado)",false,false
+withdrawals,idx_withdrawals_user_estado_monto,"CREATE INDEX idx_withdrawals_user_estado_monto ON public.withdrawals USING btree (user_id, estado, monto)",false,false
+withdrawals,idx_withdrawals_user_id,CREATE INDEX idx_withdrawals_user_id ON public.withdrawals USING btree (user_id),false,false
+withdrawals,idx_withdrawals_user_pending,CREATE INDEX idx_withdrawals_user_pending ON public.withdrawals USING btree (user_id) WHERE (estado = 'pendiente'::text),false,false
+withdrawals,withdrawals_pkey,CREATE UNIQUE INDEX withdrawals_pkey ON public.withdrawals USING btree (id),true,true
+
+
+//supabase policies 
+
+schemaname,tablename,policyname,permissive,roles,command,using_expression,check_expression
 public,daily_earnings,Admins ven todas las ganancias diarias,PERMISSIVE,{public},SELECT,"(EXISTS ( SELECT 1
    FROM profiles
   WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))",null
@@ -67,85 +107,1261 @@ public,withdrawals,admin_or_own_select_withdrawals,PERMISSIVE,{public},SELECT,((
 public,withdrawals,admin_update_withdrawals,PERMISSIVE,{public},UPDATE,is_admin(),is_admin()
 public,withdrawals,user_insert_withdrawals,PERMISSIVE,{public},INSERT,null,(( SELECT auth.uid() AS uid) = user_id)
 
-// supabase indices
-table_name,index_name,index_definition
-daily_earnings,daily_earnings_pkey,CREATE UNIQUE INDEX daily_earnings_pkey ON public.daily_earnings USING btree (id)
-daily_earnings,idx_daily_earnings_date,CREATE INDEX idx_daily_earnings_date ON public.daily_earnings USING btree (date DESC)
-daily_earnings,idx_daily_earnings_lookup,"CREATE INDEX idx_daily_earnings_lookup ON public.daily_earnings USING btree (user_id, date DESC) INCLUDE (earning_amount)"
-daily_earnings,idx_daily_earnings_user,CREATE INDEX idx_daily_earnings_user ON public.daily_earnings USING btree (user_id)
-daily_earnings,idx_daily_earnings_user_date,"CREATE INDEX idx_daily_earnings_user_date ON public.daily_earnings USING btree (user_id, date DESC)"
-daily_earnings,unique_user_day,"CREATE UNIQUE INDEX unique_user_day ON public.daily_earnings USING btree (user_id, date)"
-investment_history,idx_investment_history_date,CREATE INDEX idx_investment_history_date ON public.investment_history USING btree (effective_date DESC)
-investment_history,idx_investment_history_investment,CREATE INDEX idx_investment_history_investment ON public.investment_history USING btree (investment_id)
-investment_history,idx_investment_history_user,CREATE INDEX idx_investment_history_user ON public.investment_history USING btree (user_id)
-investment_history,investment_history_pkey,CREATE UNIQUE INDEX investment_history_pkey ON public.investment_history USING btree (id)
-investment_history,unique_investment_date,"CREATE UNIQUE INDEX unique_investment_date ON public.investment_history USING btree (investment_id, effective_date)"
-investments,idx_investments_created_at,CREATE INDEX idx_investments_created_at ON public.investments USING btree (created_at DESC)
-investments,idx_investments_user_created,"CREATE INDEX idx_investments_user_created ON public.investments USING btree (user_id, created_at DESC)"
-investments,investments_pkey,CREATE UNIQUE INDEX investments_pkey ON public.investments USING btree (id)
-profiles,idx_profiles_cliente_active,"CREATE INDEX idx_profiles_cliente_active ON public.profiles USING btree (id, email, created_at DESC) WHERE (role = 'cliente'::text)"
-profiles,idx_profiles_created_at,CREATE INDEX idx_profiles_created_at ON public.profiles USING btree (created_at DESC)
-profiles,idx_profiles_role,CREATE INDEX idx_profiles_role ON public.profiles USING btree (role)
-profiles,profiles_email_key,CREATE UNIQUE INDEX profiles_email_key ON public.profiles USING btree (email)
-profiles,profiles_pkey,CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id)
-withdrawals,idx_withdrawals_estado,CREATE INDEX idx_withdrawals_estado ON public.withdrawals USING btree (estado)
-withdrawals,idx_withdrawals_estado_fecha,"CREATE INDEX idx_withdrawals_estado_fecha ON public.withdrawals USING btree (estado, fecha_solicitud DESC)"
-withdrawals,idx_withdrawals_fecha_solicitud,CREATE INDEX idx_withdrawals_fecha_solicitud ON public.withdrawals USING btree (fecha_solicitud DESC)
-withdrawals,idx_withdrawals_pending_only,"CREATE INDEX idx_withdrawals_pending_only ON public.withdrawals USING btree (user_id, monto, fecha_solicitud DESC) WHERE (estado = 'pendiente'::text)"
-withdrawals,idx_withdrawals_user_estado,"CREATE INDEX idx_withdrawals_user_estado ON public.withdrawals USING btree (user_id, estado)"
-withdrawals,idx_withdrawals_user_estado_monto,"CREATE INDEX idx_withdrawals_user_estado_monto ON public.withdrawals USING btree (user_id, estado, monto)"
-withdrawals,idx_withdrawals_user_id,CREATE INDEX idx_withdrawals_user_id ON public.withdrawals USING btree (user_id)
-withdrawals,idx_withdrawals_user_pending,CREATE INDEX idx_withdrawals_user_pending ON public.withdrawals USING btree (user_id) WHERE (estado = 'pendiente'::text)
-withdrawals,withdrawals_pkey,CREATE UNIQUE INDEX withdrawals_pkey ON public.withdrawals USING btree (id)
+//supabse triggers 
+table_name,trigger_name,event,action_timing,action_statement
+investments,investment_history_trigger,INSERT,AFTER,EXECUTE FUNCTION log_investment_change()
+investments,investment_history_trigger,UPDATE,AFTER,EXECUTE FUNCTION log_investment_change()
+investments,on_investment_created,INSERT,BEFORE,EXECUTE FUNCTION initialize_investment()
 
 
-//triggers
-trigger_name,table_name,trigger_definition
-investment_history_trigger,investments,CREATE TRIGGER investment_history_trigger AFTER INSERT OR UPDATE ON public.investments FOR EACH ROW EXECUTE FUNCTION log_investment_change()
-on_investment_created,investments,CREATE TRIGGER on_investment_created BEFORE INSERT ON public.investments FOR EACH ROW EXECUTE FUNCTION initialize_investment()
+//supabase triggers mas funciones asociadas 
 
-// foreing keys y constraints
-table_name,constraint_name,constraint_type,column_name,foreign_table,foreign_column
-daily_earnings,2200_34624_1_not_null,CHECK,null,null,null
-daily_earnings,2200_34624_7_not_null,CHECK,null,null,null
-daily_earnings,2200_34624_6_not_null,CHECK,null,null,null
-daily_earnings,2200_34624_5_not_null,CHECK,null,null,null
-daily_earnings,2200_34624_4_not_null,CHECK,null,null,null
-daily_earnings,2200_34624_3_not_null,CHECK,null,null,null
-daily_earnings,2200_34624_2_not_null,CHECK,null,null,null
-daily_earnings,daily_earnings_investment_id_fkey,FOREIGN KEY,investment_id,investments,id
-daily_earnings,daily_earnings_user_id_fkey,FOREIGN KEY,user_id,profiles,id
-daily_earnings,daily_earnings_pkey,PRIMARY KEY,id,daily_earnings,id
-daily_earnings,unique_user_day,UNIQUE,date,daily_earnings,date
-daily_earnings,unique_user_day,UNIQUE,user_id,daily_earnings,date
-daily_earnings,unique_user_day,UNIQUE,user_id,daily_earnings,user_id
-daily_earnings,unique_user_day,UNIQUE,date,daily_earnings,user_id
-investment_history,2200_36050_5_not_null,CHECK,null,null,null
-investment_history,2200_36050_6_not_null,CHECK,null,null,null
-investment_history,2200_36050_1_not_null,CHECK,null,null,null
-investment_history,2200_36050_2_not_null,CHECK,null,null,null
-investment_history,2200_36050_3_not_null,CHECK,null,null,null
-investment_history,2200_36050_4_not_null,CHECK,null,null,null
-investment_history,investment_history_user_id_fkey,FOREIGN KEY,user_id,profiles,id
-investment_history,investment_history_investment_id_fkey,FOREIGN KEY,investment_id,investments,id
-investment_history,investment_history_pkey,PRIMARY KEY,id,investment_history,id
-investment_history,unique_investment_date,UNIQUE,investment_id,investment_history,investment_id
-investment_history,unique_investment_date,UNIQUE,effective_date,investment_history,effective_date
-investment_history,unique_investment_date,UNIQUE,effective_date,investment_history,investment_id
-investment_history,unique_investment_date,UNIQUE,investment_id,investment_history,effective_date
-investments,2200_17505_2_not_null,CHECK,null,null,null
-investments,2200_17505_1_not_null,CHECK,null,null,null
-investments,investments_user_id_fkey,FOREIGN KEY,user_id,profiles,id
-investments,investments_pkey,PRIMARY KEY,id,investments,id
-profiles,profiles_role_check,CHECK,null,profiles,role
-profiles,2200_17487_2_not_null,CHECK,null,null,null
-profiles,2200_17487_1_not_null,CHECK,null,null,null
-profiles,profiles_id_fkey,FOREIGN KEY,id,null,null
-profiles,profiles_pkey,PRIMARY KEY,id,profiles,id
-profiles,profiles_email_key,UNIQUE,email,profiles,email
-withdrawals,2200_17523_3_not_null,CHECK,null,null,null
-withdrawals,2200_17523_2_not_null,CHECK,null,null,null
-withdrawals,2200_17523_1_not_null,CHECK,null,null,null
-withdrawals,withdrawals_estado_check,CHECK,null,withdrawals,estado
-withdrawals,withdrawals_user_id_fkey,FOREIGN KEY,user_id,profiles,id
-withdrawals,withdrawals_pkey,PRIMARY KEY,id,withdrawals,id
+trigger_name,trigger_definition
+update_objects_updated_at,CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()
+prefixes_create_hierarchy,CREATE TRIGGER prefixes_create_hierarchy BEFORE INSERT ON storage.prefixes FOR EACH ROW WHEN (pg_trigger_depth() < 1) EXECUTE FUNCTION storage.prefixes_insert_trigger()
+enforce_bucket_name_length_trigger,CREATE TRIGGER enforce_bucket_name_length_trigger BEFORE INSERT OR UPDATE OF name ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_name_length()
+objects_insert_create_prefix,CREATE TRIGGER objects_insert_create_prefix BEFORE INSERT ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.objects_insert_prefix_trigger()
+objects_delete_delete_prefix,CREATE TRIGGER objects_delete_delete_prefix AFTER DELETE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.delete_prefix_hierarchy_trigger()
+objects_update_create_prefix,CREATE TRIGGER objects_update_create_prefix BEFORE UPDATE ON storage.objects FOR EACH ROW WHEN (new.name <> old.name OR new.bucket_id <> old.bucket_id) EXECUTE FUNCTION storage.objects_update_prefix_trigger()
+prefixes_delete_hierarchy,CREATE TRIGGER prefixes_delete_hierarchy AFTER DELETE ON storage.prefixes FOR EACH ROW EXECUTE FUNCTION storage.delete_prefix_hierarchy_trigger()
+tr_check_filters,CREATE TRIGGER tr_check_filters BEFORE INSERT OR UPDATE ON realtime.subscription FOR EACH ROW EXECUTE FUNCTION realtime.subscription_check_filters()
+on_auth_user_created,CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user()
+on_investment_created,CREATE TRIGGER on_investment_created BEFORE INSERT ON investments FOR EACH ROW EXECUTE FUNCTION initialize_investment()
+investment_history_trigger,CREATE TRIGGER investment_history_trigger AFTER INSERT OR UPDATE ON investments FOR EACH ROW EXECUTE FUNCTION log_investment_change()
+
+//////supabase funciones 
+
+function_name,schema,definition
+calculate_withdrawal_balance,public,"CREATE OR REPLACE FUNCTION public.calculate_withdrawal_balance(p_user_id uuid, p_exclude_withdrawal_id uuid DEFAULT NULL::uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  total_earned NUMERIC;
+  total_paid NUMERIC;
+  total_pending NUMERIC;
+BEGIN
+  -- Ganancias desde daily_earnings
+  SELECT COALESCE(SUM(earning_amount), 0)
+  INTO total_earned
+  FROM daily_earnings
+  WHERE user_id = p_user_id;
+  
+  -- Retiros pagados
+  SELECT COALESCE(SUM(monto), 0)
+  INTO total_paid
+  FROM withdrawals
+  WHERE user_id = p_user_id 
+    AND estado = 'pagado';
+  
+  -- Retiros pendientes (excluyendo el actual)
+  SELECT COALESCE(SUM(monto), 0)
+  INTO total_pending
+  FROM withdrawals
+  WHERE user_id = p_user_id 
+    AND estado = 'pendiente'
+    AND (p_exclude_withdrawal_id IS NULL OR id != p_exclude_withdrawal_id);
+  
+  RETURN GREATEST(0, total_earned - total_paid - total_pending);
+END;
+$function$
+"
+check_sufficient_funds,public,"CREATE OR REPLACE FUNCTION public.check_sufficient_funds()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  available_funds NUMERIC;
+BEGIN
+  -- Calcular fondos disponibles usando la función actualizada
+  SELECT public.get_available_balance(NEW.user_id) INTO available_funds;
+  
+  IF NEW.monto > available_funds THEN
+    RAISE EXCEPTION 'Fondos insuficientes. Disponible: %', available_funds;
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+"
+generate_daily_earnings,public,"CREATE OR REPLACE FUNCTION public.generate_daily_earnings()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  inv RECORD;
+  today DATE := CURRENT_DATE;
+BEGIN
+  FOR inv IN 
+    SELECT 
+      i.id AS investment_id,
+      i.user_id,
+      i.inversion_actual,
+      i.tasa_diaria
+    FROM investments i
+    WHERE i.inversion_actual > 0
+      AND i.tasa_diaria > 0
+  LOOP
+    INSERT INTO daily_earnings (
+      user_id,
+      investment_id,
+      investment_amount,
+      daily_rate,
+      earning_amount,
+      date
+    )
+    VALUES (
+      inv.user_id,
+      inv.investment_id,
+      inv.inversion_actual,
+      inv.tasa_diaria,
+      inv.inversion_actual * (inv.tasa_diaria / 100),
+      today
+    )
+    ON CONFLICT (user_id, date) DO NOTHING;
+  END LOOP;
+  
+  RAISE NOTICE 'Ganancias generadas para %', today;
+END;
+$function$
+"
+generate_user_daily_earnings,public,"CREATE OR REPLACE FUNCTION public.generate_user_daily_earnings(p_user_id uuid)
+ RETURNS TABLE(days_generated integer, total_earnings numeric, message text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_investment RECORD;
+  v_last_date DATE;
+  v_days_generated INT;
+  v_total_earnings NUMERIC;
+BEGIN
+  -- Obtener inversión
+  SELECT 
+    i.id,
+    i.user_id,
+    i.inversion_actual,
+    i.tasa_diaria,
+    i.created_at,
+    COALESCE(i.last_week_generated, (i.created_at)::DATE) as last_generated
+  INTO v_investment
+  FROM public.investments i
+  WHERE i.user_id = p_user_id
+    AND i.inversion_actual > 0
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 0, 0::NUMERIC, 'No hay inversión activa'::TEXT;
+    RETURN;
+  END IF;
+
+  v_last_date := v_investment.last_generated;
+
+  -- 🔥 INSERT MASIVO usando investment_history
+  WITH date_series AS (
+    SELECT generate_series(
+      v_last_date + INTERVAL '1 day',
+      CURRENT_DATE - INTERVAL '1 day',
+      INTERVAL '1 day'
+    )::DATE AS earning_date
+  ),
+  -- Obtener el monto y tasa correctos para cada día
+  daily_rates AS (
+    SELECT 
+      ds.earning_date,
+      COALESCE(
+        (SELECT amount FROM public.investment_history 
+         WHERE investment_id = v_investment.id 
+           AND effective_date <= ds.earning_date
+         ORDER BY effective_date DESC 
+         LIMIT 1),
+        v_investment.inversion_actual
+      ) as amount,
+      COALESCE(
+        (SELECT daily_rate FROM public.investment_history 
+         WHERE investment_id = v_investment.id 
+           AND effective_date <= ds.earning_date
+         ORDER BY effective_date DESC 
+         LIMIT 1),
+        v_investment.tasa_diaria
+      ) as rate
+    FROM date_series ds
+  )
+  INSERT INTO public.daily_earnings (
+    user_id,
+    investment_id,
+    investment_amount,
+    daily_rate,
+    earning_amount,
+    date
+  )
+  SELECT 
+    v_investment.user_id,
+    v_investment.id,
+    dr.amount,
+    dr.rate,
+    dr.amount * (dr.rate / 100),
+    dr.earning_date
+  FROM daily_rates dr
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.daily_earnings de
+    WHERE de.user_id = v_investment.user_id 
+      AND de.date = dr.earning_date
+  );
+
+  GET DIAGNOSTICS v_days_generated = ROW_COUNT;
+  
+  v_total_earnings := (
+    SELECT SUM(earning_amount) 
+    FROM public.daily_earnings 
+    WHERE user_id = v_investment.user_id
+      AND date > v_last_date
+      AND date < CURRENT_DATE
+  );
+
+  -- Actualizar última fecha
+  IF v_days_generated > 0 THEN
+    UPDATE public.investments 
+    SET last_week_generated = CURRENT_DATE - INTERVAL '1 day'
+    WHERE id = v_investment.id;
+  END IF;
+
+  RETURN QUERY SELECT 
+    v_days_generated::INTEGER, 
+    COALESCE(v_total_earnings, 0)::NUMERIC,
+    CASE 
+      WHEN v_days_generated > 0 THEN 'Ganancias generadas exitosamente'
+      ELSE 'No hay días nuevos para generar'
+    END::TEXT;
+END;
+$function$
+"
+generate_user_weekly_earnings,public,"CREATE OR REPLACE FUNCTION public.generate_user_weekly_earnings(p_user_id uuid)
+ RETURNS TABLE(weeks_generated integer, total_earnings numeric, message text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_investment RECORD;
+  v_week_start DATE;
+  v_week_end DATE;
+  v_weeks_generated INT := 0;
+  v_total_earnings NUMERIC := 0;
+  v_weekly_rate NUMERIC;
+  v_earning NUMERIC;
+  v_current_week_start DATE;
+BEGIN
+  -- Obtener inversión activa del usuario
+  SELECT 
+    i.id,
+    i.user_id,
+    i.inversion_actual,
+    i.tasa_mensual,
+    i.created_at,
+    COALESCE(i.last_week_generated, DATE_TRUNC('week', i.created_at)::DATE) as last_generated
+  INTO v_investment
+  FROM public.investments i
+  WHERE i.user_id = p_user_id
+    AND i.inversion_actual > 0
+  LIMIT 1;
+
+  -- Si no hay inversión, retornar
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 0, 0::NUMERIC, 'No hay inversión activa'::TEXT;
+    RETURN;
+  END IF;
+
+  -- Calcular inicio de semana actual (lunes)
+  v_current_week_start := DATE_TRUNC('week', NOW())::DATE;
+  
+  -- Empezar desde la última semana generada + 1 semana
+  v_week_start := v_investment.last_generated + INTERVAL '1 week';
+  
+  -- Generar ganancias para todas las semanas completas hasta la semana pasada
+  -- (NO incluir la semana actual porque aún no terminó)
+  WHILE v_week_start < v_current_week_start LOOP
+    v_week_end := v_week_start + INTERVAL '6 days';
+    
+    -- Verificar que esta semana no exista ya
+    IF NOT EXISTS (
+      SELECT 1 FROM public.weekly_earnings 
+      WHERE user_id = p_user_id AND week_start = v_week_start
+    ) THEN
+      -- Calcular ganancia semanal
+      v_weekly_rate := v_investment.tasa_mensual / 4;
+      v_earning := v_investment.inversion_actual * (v_weekly_rate / 100);
+      
+      -- Insertar ganancia
+      INSERT INTO public.weekly_earnings (
+        user_id,
+        investment_id,
+        investment_amount,
+        weekly_rate,
+        earning_amount,
+        week_start,
+        week_end
+      ) VALUES (
+        v_investment.user_id,
+        v_investment.id,
+        v_investment.inversion_actual,
+        v_weekly_rate,
+        v_earning,
+        v_week_start,
+        v_week_end
+      );
+      
+      v_weeks_generated := v_weeks_generated + 1;
+      v_total_earnings := v_total_earnings + v_earning;
+    END IF;
+    
+    -- Avanzar a la siguiente semana
+    v_week_start := v_week_start + INTERVAL '1 week';
+  END LOOP;
+
+  -- Actualizar última semana generada
+  IF v_weeks_generated > 0 THEN
+    UPDATE public.investments 
+    SET last_week_generated = v_week_start - INTERVAL '1 week'
+    WHERE id = v_investment.id;
+  END IF;
+
+  -- Retornar resultado
+  RETURN QUERY SELECT 
+    v_weeks_generated, 
+    v_total_earnings,
+    CASE 
+      WHEN v_weeks_generated > 0 THEN 'Ganancias generadas exitosamente'
+      ELSE 'No hay semanas nuevas para generar'
+    END::TEXT;
+END;
+$function$
+"
+get_all_clients_with_investments,public,"CREATE OR REPLACE FUNCTION public.get_all_clients_with_investments()
+ RETURNS TABLE(user_id uuid, full_name text, email text, investment_id uuid, investment_amount numeric, daily_rate numeric, total_earnings numeric, days_count integer)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+AS $function$
+  SELECT 
+    p.id AS user_id,
+    p.full_name,
+    p.email,
+    i.id AS investment_id,
+    COALESCE(i.inversion_actual, 0) AS investment_amount,
+    COALESCE(i.tasa_diaria, 0) AS daily_rate,
+    COALESCE(SUM(de.earning_amount), 0) AS total_earnings,
+    COALESCE(COUNT(DISTINCT de.date), 0)::INTEGER AS days_count
+  FROM profiles p
+  LEFT JOIN investments i ON i.user_id = p.id
+  LEFT JOIN daily_earnings de ON de.user_id = p.id
+  WHERE p.role = 'cliente'
+  GROUP BY p.id, p.full_name, p.email, i.id, i.inversion_actual, i.tasa_diaria
+  ORDER BY p.created_at DESC;
+$function$
+"
+get_client_dashboard_data,public,"CREATE OR REPLACE FUNCTION public.get_client_dashboard_data(p_user_id uuid)
+ RETURNS json
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  result JSON;
+BEGIN
+  SELECT json_build_object(
+    'investment', (
+      SELECT json_build_object(
+        'id', i.id,
+        'inversion_actual', i.inversion_actual,
+        'tasa_diaria', i.tasa_diaria,
+        'created_at', i.created_at
+      )
+      FROM investments i
+      WHERE i.user_id = p_user_id
+      LIMIT 1
+    ),
+    'withdrawals', (
+      SELECT COALESCE(json_agg(
+        json_build_object(
+          'id', w.id,
+          'monto', w.monto,
+          'estado', w.estado,
+          'fecha_solicitud', w.fecha_solicitud
+        ) ORDER BY w.fecha_solicitud DESC
+      ), '[]'::json)
+      FROM withdrawals w
+      WHERE w.user_id = p_user_id
+    ),
+    'total_earnings', (
+      -- ✅ USA daily_earnings en lugar de calcular
+      SELECT COALESCE(SUM(earning_amount), 0)
+      FROM daily_earnings
+      WHERE user_id = p_user_id
+    ),
+    'available_balance', (
+      SELECT GREATEST(0, 
+        COALESCE(SUM(de.earning_amount), 0) - 
+        COALESCE((
+          SELECT SUM(monto) 
+          FROM withdrawals 
+          WHERE user_id = p_user_id 
+            AND estado IN ('pagado', 'pendiente')
+        ), 0)
+      )
+      FROM daily_earnings de
+      WHERE de.user_id = p_user_id
+    )
+  ) INTO result;
+  
+  RETURN result;
+END;
+$function$
+"
+get_current_week_projection,public,"CREATE OR REPLACE FUNCTION public.get_current_week_projection(p_user_id uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_investment RECORD;
+  v_weekly_rate NUMERIC;
+  v_days_elapsed INT;
+  v_projection NUMERIC;
+BEGIN
+  -- Obtener inversión activa
+  SELECT inversion_actual, tasa_mensual
+  INTO v_investment
+  FROM public.investments
+  WHERE user_id = p_user_id
+  LIMIT 1;
+  
+  IF NOT FOUND OR v_investment.inversion_actual = 0 THEN
+    RETURN 0;
+  END IF;
+  
+  -- Calcular tasa semanal
+  v_weekly_rate := v_investment.tasa_mensual / 4;
+  
+  -- Calcular días transcurridos en la semana actual
+  v_days_elapsed := EXTRACT(DOW FROM NOW()); -- 0=domingo, 1=lunes, etc.
+  IF v_days_elapsed = 0 THEN v_days_elapsed := 7; END IF;
+  
+  -- Proyección proporcional a los días transcurridos
+  v_projection := v_investment.inversion_actual * (v_weekly_rate / 100) * (v_days_elapsed / 7.0);
+  
+  RETURN v_projection;
+END;
+$function$
+"
+get_system_metrics,public,"CREATE OR REPLACE FUNCTION public.get_system_metrics()
+ RETURNS TABLE(metric text, value text, status text)
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    'Database Size'::TEXT,
+    pg_size_pretty(pg_database_size(current_database()))::TEXT,
+    CASE 
+      WHEN pg_database_size(current_database()) > 450*1024*1024 
+      THEN '⚠️ WARNING' 
+      ELSE '✅ OK' 
+    END::TEXT
+  UNION ALL
+  SELECT 
+    'Active Connections',
+    COUNT(*)::TEXT,
+    CASE 
+      WHEN COUNT(*) > 10 
+      THEN '⚠️ HIGH' 
+      ELSE '✅ OK' 
+    END
+  FROM pg_stat_activity
+  WHERE datname = current_database()
+  UNION ALL
+  SELECT 
+    'Pending Withdrawals',
+    COUNT(*)::TEXT,
+    CASE 
+      WHEN COUNT(*) > 20 
+      THEN '⚠️ REVIEW' 
+      ELSE '✅ OK' 
+    END
+  FROM withdrawals
+  WHERE estado = 'pendiente'
+  UNION ALL
+  SELECT 
+    'Daily Earnings Today',
+    COUNT(*)::TEXT,
+    CASE 
+      WHEN COUNT(*) = 0 
+      THEN '❌ ERROR' 
+      ELSE '✅ OK' 
+    END
+  FROM daily_earnings
+  WHERE date = CURRENT_DATE;
+END;
+$function$
+"
+get_user_role,public,"CREATE OR REPLACE FUNCTION public.get_user_role()
+ RETURNS text
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT role FROM profiles WHERE id = auth.uid() LIMIT 1;
+$function$
+"
+get_user_total_earnings,public,"CREATE OR REPLACE FUNCTION public.get_user_total_earnings(p_user_id uuid)
+ RETURNS TABLE(total_earnings numeric, days_count integer, daily_rate numeric, current_investment numeric)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_investment RECORD;
+  v_total_gain NUMERIC;
+  v_days INT;
+BEGIN
+  -- Obtener inversión activa
+  SELECT 
+    inversion_actual,
+    tasa_diaria,
+    created_at
+  INTO v_investment
+  FROM public.investments
+  WHERE user_id = p_user_id
+  LIMIT 1;
+  
+  -- Si no hay inversión
+  IF NOT FOUND OR v_investment.inversion_actual = 0 THEN
+    RETURN QUERY SELECT 
+      0::NUMERIC as total_earnings,
+      0 as days_count,
+      0::NUMERIC as daily_rate,
+      0::NUMERIC as current_investment;
+    RETURN;
+  END IF;
+  
+  -- Sumar todas las ganancias diarias generadas
+  SELECT 
+    COALESCE(SUM(earning_amount), 0),
+    COALESCE(COUNT(*), 0)
+  INTO v_total_gain, v_days
+  FROM public.daily_earnings
+  WHERE user_id = p_user_id;
+  
+  -- Retornar datos completos
+  RETURN QUERY SELECT 
+    COALESCE(v_total_gain, 0)::NUMERIC,
+    v_days,
+    v_investment.tasa_diaria::NUMERIC,
+    v_investment.inversion_actual;
+END;
+$function$
+"
+handle_new_user,public,"CREATE OR REPLACE FUNCTION public.handle_new_user()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'auth'
+AS $function$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name, role)
+  VALUES (
+    new.id, 
+    new.email, 
+    COALESCE(new.raw_user_meta_data->>'full_name', 'Usuario Nuevo'),
+    COALESCE(new.raw_user_meta_data->>'role', 'cliente')
+  );
+  
+  RETURN new;
+END;
+$function$
+"
+initialize_investment,public,"CREATE OR REPLACE FUNCTION public.initialize_investment()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  -- Establecer la fecha de inicio como AYER (último día generado)
+  NEW.last_week_generated := (CURRENT_DATE - INTERVAL '1 day')::DATE;
+  RETURN NEW;
+END;
+$function$
+"
+is_admin,public,"CREATE OR REPLACE FUNCTION public.is_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 
+    FROM profiles 
+    WHERE id = auth.uid() 
+      AND role = 'admin'
+  );
+$function$
+"
+log_investment_change,public,"CREATE OR REPLACE FUNCTION public.log_investment_change()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  -- Solo registrar si cambia el monto o la tasa
+  IF (TG_OP = 'INSERT') OR 
+     (TG_OP = 'UPDATE' AND (
+       NEW.inversion_actual != OLD.inversion_actual OR 
+       NEW.tasa_diaria != OLD.tasa_diaria
+     )) THEN
+    
+    -- Insertar snapshot del cambio
+    INSERT INTO public.investment_history (
+      user_id,
+      investment_id,
+      amount,
+      daily_rate,
+      effective_date
+    ) VALUES (
+      NEW.user_id,
+      NEW.id,
+      NEW.inversion_actual,
+      NEW.tasa_diaria,
+      CURRENT_DATE
+    )
+    ON CONFLICT (investment_id, effective_date) 
+    DO UPDATE SET 
+      amount = EXCLUDED.amount,
+      daily_rate = EXCLUDED.daily_rate;
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+"
+
+
+
+///supabase funciones rpc rpc_name,definition
+calculate_withdrawal_balance,"CREATE OR REPLACE FUNCTION public.calculate_withdrawal_balance(p_user_id uuid, p_exclude_withdrawal_id uuid DEFAULT NULL::uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  total_earned NUMERIC;
+  total_paid NUMERIC;
+  total_pending NUMERIC;
+BEGIN
+  -- Ganancias desde daily_earnings
+  SELECT COALESCE(SUM(earning_amount), 0)
+  INTO total_earned
+  FROM daily_earnings
+  WHERE user_id = p_user_id;
+  
+  -- Retiros pagados
+  SELECT COALESCE(SUM(monto), 0)
+  INTO total_paid
+  FROM withdrawals
+  WHERE user_id = p_user_id 
+    AND estado = 'pagado';
+  
+  -- Retiros pendientes (excluyendo el actual)
+  SELECT COALESCE(SUM(monto), 0)
+  INTO total_pending
+  FROM withdrawals
+  WHERE user_id = p_user_id 
+    AND estado = 'pendiente'
+    AND (p_exclude_withdrawal_id IS NULL OR id != p_exclude_withdrawal_id);
+  
+  RETURN GREATEST(0, total_earned - total_paid - total_pending);
+END;
+$function$
+"
+check_sufficient_funds,"CREATE OR REPLACE FUNCTION public.check_sufficient_funds()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  available_funds NUMERIC;
+BEGIN
+  -- Calcular fondos disponibles usando la función actualizada
+  SELECT public.get_available_balance(NEW.user_id) INTO available_funds;
+  
+  IF NEW.monto > available_funds THEN
+    RAISE EXCEPTION 'Fondos insuficientes. Disponible: %', available_funds;
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+"
+generate_daily_earnings,"CREATE OR REPLACE FUNCTION public.generate_daily_earnings()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  inv RECORD;
+  today DATE := CURRENT_DATE;
+BEGIN
+  FOR inv IN 
+    SELECT 
+      i.id AS investment_id,
+      i.user_id,
+      i.inversion_actual,
+      i.tasa_diaria
+    FROM investments i
+    WHERE i.inversion_actual > 0
+      AND i.tasa_diaria > 0
+  LOOP
+    INSERT INTO daily_earnings (
+      user_id,
+      investment_id,
+      investment_amount,
+      daily_rate,
+      earning_amount,
+      date
+    )
+    VALUES (
+      inv.user_id,
+      inv.investment_id,
+      inv.inversion_actual,
+      inv.tasa_diaria,
+      inv.inversion_actual * (inv.tasa_diaria / 100),
+      today
+    )
+    ON CONFLICT (user_id, date) DO NOTHING;
+  END LOOP;
+  
+  RAISE NOTICE 'Ganancias generadas para %', today;
+END;
+$function$
+"
+generate_user_daily_earnings,"CREATE OR REPLACE FUNCTION public.generate_user_daily_earnings(p_user_id uuid)
+ RETURNS TABLE(days_generated integer, total_earnings numeric, message text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_investment RECORD;
+  v_last_date DATE;
+  v_days_generated INT;
+  v_total_earnings NUMERIC;
+BEGIN
+  -- Obtener inversión
+  SELECT 
+    i.id,
+    i.user_id,
+    i.inversion_actual,
+    i.tasa_diaria,
+    i.created_at,
+    COALESCE(i.last_week_generated, (i.created_at)::DATE) as last_generated
+  INTO v_investment
+  FROM public.investments i
+  WHERE i.user_id = p_user_id
+    AND i.inversion_actual > 0
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 0, 0::NUMERIC, 'No hay inversión activa'::TEXT;
+    RETURN;
+  END IF;
+
+  v_last_date := v_investment.last_generated;
+
+  -- 🔥 INSERT MASIVO usando investment_history
+  WITH date_series AS (
+    SELECT generate_series(
+      v_last_date + INTERVAL '1 day',
+      CURRENT_DATE - INTERVAL '1 day',
+      INTERVAL '1 day'
+    )::DATE AS earning_date
+  ),
+  -- Obtener el monto y tasa correctos para cada día
+  daily_rates AS (
+    SELECT 
+      ds.earning_date,
+      COALESCE(
+        (SELECT amount FROM public.investment_history 
+         WHERE investment_id = v_investment.id 
+           AND effective_date <= ds.earning_date
+         ORDER BY effective_date DESC 
+         LIMIT 1),
+        v_investment.inversion_actual
+      ) as amount,
+      COALESCE(
+        (SELECT daily_rate FROM public.investment_history 
+         WHERE investment_id = v_investment.id 
+           AND effective_date <= ds.earning_date
+         ORDER BY effective_date DESC 
+         LIMIT 1),
+        v_investment.tasa_diaria
+      ) as rate
+    FROM date_series ds
+  )
+  INSERT INTO public.daily_earnings (
+    user_id,
+    investment_id,
+    investment_amount,
+    daily_rate,
+    earning_amount,
+    date
+  )
+  SELECT 
+    v_investment.user_id,
+    v_investment.id,
+    dr.amount,
+    dr.rate,
+    dr.amount * (dr.rate / 100),
+    dr.earning_date
+  FROM daily_rates dr
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.daily_earnings de
+    WHERE de.user_id = v_investment.user_id 
+      AND de.date = dr.earning_date
+  );
+
+  GET DIAGNOSTICS v_days_generated = ROW_COUNT;
+  
+  v_total_earnings := (
+    SELECT SUM(earning_amount) 
+    FROM public.daily_earnings 
+    WHERE user_id = v_investment.user_id
+      AND date > v_last_date
+      AND date < CURRENT_DATE
+  );
+
+  -- Actualizar última fecha
+  IF v_days_generated > 0 THEN
+    UPDATE public.investments 
+    SET last_week_generated = CURRENT_DATE - INTERVAL '1 day'
+    WHERE id = v_investment.id;
+  END IF;
+
+  RETURN QUERY SELECT 
+    v_days_generated::INTEGER, 
+    COALESCE(v_total_earnings, 0)::NUMERIC,
+    CASE 
+      WHEN v_days_generated > 0 THEN 'Ganancias generadas exitosamente'
+      ELSE 'No hay días nuevos para generar'
+    END::TEXT;
+END;
+$function$
+"
+generate_user_weekly_earnings,"CREATE OR REPLACE FUNCTION public.generate_user_weekly_earnings(p_user_id uuid)
+ RETURNS TABLE(weeks_generated integer, total_earnings numeric, message text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_investment RECORD;
+  v_week_start DATE;
+  v_week_end DATE;
+  v_weeks_generated INT := 0;
+  v_total_earnings NUMERIC := 0;
+  v_weekly_rate NUMERIC;
+  v_earning NUMERIC;
+  v_current_week_start DATE;
+BEGIN
+  -- Obtener inversión activa del usuario
+  SELECT 
+    i.id,
+    i.user_id,
+    i.inversion_actual,
+    i.tasa_mensual,
+    i.created_at,
+    COALESCE(i.last_week_generated, DATE_TRUNC('week', i.created_at)::DATE) as last_generated
+  INTO v_investment
+  FROM public.investments i
+  WHERE i.user_id = p_user_id
+    AND i.inversion_actual > 0
+  LIMIT 1;
+
+  -- Si no hay inversión, retornar
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 0, 0::NUMERIC, 'No hay inversión activa'::TEXT;
+    RETURN;
+  END IF;
+
+  -- Calcular inicio de semana actual (lunes)
+  v_current_week_start := DATE_TRUNC('week', NOW())::DATE;
+  
+  -- Empezar desde la última semana generada + 1 semana
+  v_week_start := v_investment.last_generated + INTERVAL '1 week';
+  
+  -- Generar ganancias para todas las semanas completas hasta la semana pasada
+  -- (NO incluir la semana actual porque aún no terminó)
+  WHILE v_week_start < v_current_week_start LOOP
+    v_week_end := v_week_start + INTERVAL '6 days';
+    
+    -- Verificar que esta semana no exista ya
+    IF NOT EXISTS (
+      SELECT 1 FROM public.weekly_earnings 
+      WHERE user_id = p_user_id AND week_start = v_week_start
+    ) THEN
+      -- Calcular ganancia semanal
+      v_weekly_rate := v_investment.tasa_mensual / 4;
+      v_earning := v_investment.inversion_actual * (v_weekly_rate / 100);
+      
+      -- Insertar ganancia
+      INSERT INTO public.weekly_earnings (
+        user_id,
+        investment_id,
+        investment_amount,
+        weekly_rate,
+        earning_amount,
+        week_start,
+        week_end
+      ) VALUES (
+        v_investment.user_id,
+        v_investment.id,
+        v_investment.inversion_actual,
+        v_weekly_rate,
+        v_earning,
+        v_week_start,
+        v_week_end
+      );
+      
+      v_weeks_generated := v_weeks_generated + 1;
+      v_total_earnings := v_total_earnings + v_earning;
+    END IF;
+    
+    -- Avanzar a la siguiente semana
+    v_week_start := v_week_start + INTERVAL '1 week';
+  END LOOP;
+
+  -- Actualizar última semana generada
+  IF v_weeks_generated > 0 THEN
+    UPDATE public.investments 
+    SET last_week_generated = v_week_start - INTERVAL '1 week'
+    WHERE id = v_investment.id;
+  END IF;
+
+  -- Retornar resultado
+  RETURN QUERY SELECT 
+    v_weeks_generated, 
+    v_total_earnings,
+    CASE 
+      WHEN v_weeks_generated > 0 THEN 'Ganancias generadas exitosamente'
+      ELSE 'No hay semanas nuevas para generar'
+    END::TEXT;
+END;
+$function$
+"
+get_all_clients_with_investments,"CREATE OR REPLACE FUNCTION public.get_all_clients_with_investments()
+ RETURNS TABLE(user_id uuid, full_name text, email text, investment_id uuid, investment_amount numeric, daily_rate numeric, total_earnings numeric, days_count integer)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+AS $function$
+  SELECT 
+    p.id AS user_id,
+    p.full_name,
+    p.email,
+    i.id AS investment_id,
+    COALESCE(i.inversion_actual, 0) AS investment_amount,
+    COALESCE(i.tasa_diaria, 0) AS daily_rate,
+    COALESCE(SUM(de.earning_amount), 0) AS total_earnings,
+    COALESCE(COUNT(DISTINCT de.date), 0)::INTEGER AS days_count
+  FROM profiles p
+  LEFT JOIN investments i ON i.user_id = p.id
+  LEFT JOIN daily_earnings de ON de.user_id = p.id
+  WHERE p.role = 'cliente'
+  GROUP BY p.id, p.full_name, p.email, i.id, i.inversion_actual, i.tasa_diaria
+  ORDER BY p.created_at DESC;
+$function$
+"
+get_client_dashboard_data,"CREATE OR REPLACE FUNCTION public.get_client_dashboard_data(p_user_id uuid)
+ RETURNS json
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  result JSON;
+BEGIN
+  SELECT json_build_object(
+    'investment', (
+      SELECT json_build_object(
+        'id', i.id,
+        'inversion_actual', i.inversion_actual,
+        'tasa_diaria', i.tasa_diaria,
+        'created_at', i.created_at
+      )
+      FROM investments i
+      WHERE i.user_id = p_user_id
+      LIMIT 1
+    ),
+    'withdrawals', (
+      SELECT COALESCE(json_agg(
+        json_build_object(
+          'id', w.id,
+          'monto', w.monto,
+          'estado', w.estado,
+          'fecha_solicitud', w.fecha_solicitud
+        ) ORDER BY w.fecha_solicitud DESC
+      ), '[]'::json)
+      FROM withdrawals w
+      WHERE w.user_id = p_user_id
+    ),
+    'total_earnings', (
+      -- ✅ USA daily_earnings en lugar de calcular
+      SELECT COALESCE(SUM(earning_amount), 0)
+      FROM daily_earnings
+      WHERE user_id = p_user_id
+    ),
+    'available_balance', (
+      SELECT GREATEST(0, 
+        COALESCE(SUM(de.earning_amount), 0) - 
+        COALESCE((
+          SELECT SUM(monto) 
+          FROM withdrawals 
+          WHERE user_id = p_user_id 
+            AND estado IN ('pagado', 'pendiente')
+        ), 0)
+      )
+      FROM daily_earnings de
+      WHERE de.user_id = p_user_id
+    )
+  ) INTO result;
+  
+  RETURN result;
+END;
+$function$
+"
+get_current_week_projection,"CREATE OR REPLACE FUNCTION public.get_current_week_projection(p_user_id uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_investment RECORD;
+  v_weekly_rate NUMERIC;
+  v_days_elapsed INT;
+  v_projection NUMERIC;
+BEGIN
+  -- Obtener inversión activa
+  SELECT inversion_actual, tasa_mensual
+  INTO v_investment
+  FROM public.investments
+  WHERE user_id = p_user_id
+  LIMIT 1;
+  
+  IF NOT FOUND OR v_investment.inversion_actual = 0 THEN
+    RETURN 0;
+  END IF;
+  
+  -- Calcular tasa semanal
+  v_weekly_rate := v_investment.tasa_mensual / 4;
+  
+  -- Calcular días transcurridos en la semana actual
+  v_days_elapsed := EXTRACT(DOW FROM NOW()); -- 0=domingo, 1=lunes, etc.
+  IF v_days_elapsed = 0 THEN v_days_elapsed := 7; END IF;
+  
+  -- Proyección proporcional a los días transcurridos
+  v_projection := v_investment.inversion_actual * (v_weekly_rate / 100) * (v_days_elapsed / 7.0);
+  
+  RETURN v_projection;
+END;
+$function$
+"
+get_system_metrics,"CREATE OR REPLACE FUNCTION public.get_system_metrics()
+ RETURNS TABLE(metric text, value text, status text)
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    'Database Size'::TEXT,
+    pg_size_pretty(pg_database_size(current_database()))::TEXT,
+    CASE 
+      WHEN pg_database_size(current_database()) > 450*1024*1024 
+      THEN '⚠️ WARNING' 
+      ELSE '✅ OK' 
+    END::TEXT
+  UNION ALL
+  SELECT 
+    'Active Connections',
+    COUNT(*)::TEXT,
+    CASE 
+      WHEN COUNT(*) > 10 
+      THEN '⚠️ HIGH' 
+      ELSE '✅ OK' 
+    END
+  FROM pg_stat_activity
+  WHERE datname = current_database()
+  UNION ALL
+  SELECT 
+    'Pending Withdrawals',
+    COUNT(*)::TEXT,
+    CASE 
+      WHEN COUNT(*) > 20 
+      THEN '⚠️ REVIEW' 
+      ELSE '✅ OK' 
+    END
+  FROM withdrawals
+  WHERE estado = 'pendiente'
+  UNION ALL
+  SELECT 
+    'Daily Earnings Today',
+    COUNT(*)::TEXT,
+    CASE 
+      WHEN COUNT(*) = 0 
+      THEN '❌ ERROR' 
+      ELSE '✅ OK' 
+    END
+  FROM daily_earnings
+  WHERE date = CURRENT_DATE;
+END;
+$function$
+"
+get_user_role,"CREATE OR REPLACE FUNCTION public.get_user_role()
+ RETURNS text
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT role FROM profiles WHERE id = auth.uid() LIMIT 1;
+$function$
+"
+get_user_total_earnings,"CREATE OR REPLACE FUNCTION public.get_user_total_earnings(p_user_id uuid)
+ RETURNS TABLE(total_earnings numeric, days_count integer, daily_rate numeric, current_investment numeric)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_investment RECORD;
+  v_total_gain NUMERIC;
+  v_days INT;
+BEGIN
+  -- Obtener inversión activa
+  SELECT 
+    inversion_actual,
+    tasa_diaria,
+    created_at
+  INTO v_investment
+  FROM public.investments
+  WHERE user_id = p_user_id
+  LIMIT 1;
+  
+  -- Si no hay inversión
+  IF NOT FOUND OR v_investment.inversion_actual = 0 THEN
+    RETURN QUERY SELECT 
+      0::NUMERIC as total_earnings,
+      0 as days_count,
+      0::NUMERIC as daily_rate,
+      0::NUMERIC as current_investment;
+    RETURN;
+  END IF;
+  
+  -- Sumar todas las ganancias diarias generadas
+  SELECT 
+    COALESCE(SUM(earning_amount), 0),
+    COALESCE(COUNT(*), 0)
+  INTO v_total_gain, v_days
+  FROM public.daily_earnings
+  WHERE user_id = p_user_id;
+  
+  -- Retornar datos completos
+  RETURN QUERY SELECT 
+    COALESCE(v_total_gain, 0)::NUMERIC,
+    v_days,
+    v_investment.tasa_diaria::NUMERIC,
+    v_investment.inversion_actual;
+END;
+$function$
+"
+handle_new_user,"CREATE OR REPLACE FUNCTION public.handle_new_user()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'auth'
+AS $function$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name, role)
+  VALUES (
+    new.id, 
+    new.email, 
+    COALESCE(new.raw_user_meta_data->>'full_name', 'Usuario Nuevo'),
+    COALESCE(new.raw_user_meta_data->>'role', 'cliente')
+  );
+  
+  RETURN new;
+END;
+$function$
+"
+initialize_investment,"CREATE OR REPLACE FUNCTION public.initialize_investment()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  -- Establecer la fecha de inicio como AYER (último día generado)
+  NEW.last_week_generated := (CURRENT_DATE - INTERVAL '1 day')::DATE;
+  RETURN NEW;
+END;
+$function$
+"
+is_admin,"CREATE OR REPLACE FUNCTION public.is_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 
+    FROM profiles 
+    WHERE id = auth.uid() 
+      AND role = 'admin'
+  );
+$function$
+"
+log_investment_change,"CREATE OR REPLACE FUNCTION public.log_investment_change()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  -- Solo registrar si cambia el monto o la tasa
+  IF (TG_OP = 'INSERT') OR 
+     (TG_OP = 'UPDATE' AND (
+       NEW.inversion_actual != OLD.inversion_actual OR 
+       NEW.tasa_diaria != OLD.tasa_diaria
+     )) THEN
+    
+    -- Insertar snapshot del cambio
+    INSERT INTO public.investment_history (
+      user_id,
+      investment_id,
+      amount,
+      daily_rate,
+      effective_date
+    ) VALUES (
+      NEW.user_id,
+      NEW.id,
+      NEW.inversion_actual,
+      NEW.tasa_diaria,
+      CURRENT_DATE
+    )
+    ON CONFLICT (investment_id, effective_date) 
+    DO UPDATE SET 
+      amount = EXCLUDED.amount,
+      daily_rate = EXCLUDED.daily_rate;
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+"
+
