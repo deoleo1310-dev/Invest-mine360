@@ -1,4 +1,5 @@
-/// supabase tablas con sus columnas
+// supabase tablas y columnas 
+
 table_name,column_name,data_type,is_nullable,column_default
 daily_earnings,id,uuid,NO,gen_random_uuid()
 daily_earnings,user_id,uuid,NO,null
@@ -37,17 +38,15 @@ withdrawals,fecha_solicitud,timestamp with time zone,YES,now()
 withdrawals,fecha_procesado,timestamp with time zone,YES,null
 withdrawals,created_at,timestamp with time zone,YES,now()
 
-
-/// supabase indices 
+//supabase indices
 
 table_name,index_name,index_definition,is_unique,is_primary
 daily_earnings,daily_earnings_pkey,CREATE UNIQUE INDEX daily_earnings_pkey ON public.daily_earnings USING btree (id),true,true
-daily_earnings,idx_daily_earnings_date,CREATE INDEX idx_daily_earnings_date ON public.daily_earnings USING btree (date DESC),false,false
 daily_earnings,idx_daily_earnings_lookup,"CREATE INDEX idx_daily_earnings_lookup ON public.daily_earnings USING btree (user_id, date DESC) INCLUDE (earning_amount)",false,false
-daily_earnings,idx_daily_earnings_user,CREATE INDEX idx_daily_earnings_user ON public.daily_earnings USING btree (user_id),false,false
 daily_earnings,idx_daily_earnings_user_date,"CREATE INDEX idx_daily_earnings_user_date ON public.daily_earnings USING btree (user_id, date DESC)",false,false
 daily_earnings,idx_daily_earnings_user_date_earning,"CREATE INDEX idx_daily_earnings_user_date_earning ON public.daily_earnings USING btree (user_id, date DESC) INCLUDE (earning_amount)",false,false
 daily_earnings,idx_daily_earnings_user_sum,CREATE INDEX idx_daily_earnings_user_sum ON public.daily_earnings USING btree (user_id) INCLUDE (earning_amount),false,false
+daily_earnings,idx_daily_earnings_user_sum_optimized,CREATE INDEX idx_daily_earnings_user_sum_optimized ON public.daily_earnings USING btree (user_id) INCLUDE (earning_amount) WHERE (earning_amount > (0)::numeric),false,false
 daily_earnings,idx_daily_earnings_user_summary,CREATE INDEX idx_daily_earnings_user_summary ON public.daily_earnings USING btree (user_id) INCLUDE (earning_amount),false,false
 daily_earnings,unique_user_day,"CREATE UNIQUE INDEX unique_user_day ON public.daily_earnings USING btree (user_id, date)",true,false
 investment_history,idx_investment_history_date,CREATE INDEX idx_investment_history_date ON public.investment_history USING btree (effective_date DESC),false,false
@@ -57,29 +56,25 @@ investment_history,investment_history_pkey,CREATE UNIQUE INDEX investment_histor
 investment_history,unique_investment_date,"CREATE UNIQUE INDEX unique_investment_date ON public.investment_history USING btree (investment_id, effective_date)",true,false
 investments,idx_investments_created_at,CREATE INDEX idx_investments_created_at ON public.investments USING btree (created_at DESC),false,false
 investments,idx_investments_user_active,"CREATE INDEX idx_investments_user_active ON public.investments USING btree (user_id, inversion_actual) WHERE (inversion_actual > (0)::numeric)",false,false
-investments,idx_investments_user_created,"CREATE INDEX idx_investments_user_created ON public.investments USING btree (user_id, created_at DESC)",false,false
 investments,investments_pkey,CREATE UNIQUE INDEX investments_pkey ON public.investments USING btree (id),true,true
 profiles,idx_profiles_auth_role,"CREATE INDEX idx_profiles_auth_role ON public.profiles USING btree (id, role) WHERE (role = 'admin'::text)",false,false
 profiles,idx_profiles_cliente_active,"CREATE INDEX idx_profiles_cliente_active ON public.profiles USING btree (id, email, created_at DESC) WHERE (role = 'cliente'::text)",false,false
-profiles,idx_profiles_created_at,CREATE INDEX idx_profiles_created_at ON public.profiles USING btree (created_at DESC),false,false
 profiles,idx_profiles_email_role,"CREATE INDEX idx_profiles_email_role ON public.profiles USING btree (email, role)",false,false
-profiles,idx_profiles_role,CREATE INDEX idx_profiles_role ON public.profiles USING btree (role),false,false
+profiles,idx_profiles_lookup,"CREATE INDEX idx_profiles_lookup ON public.profiles USING btree (id) INCLUDE (full_name, email)",false,false
 profiles,profiles_email_key,CREATE UNIQUE INDEX profiles_email_key ON public.profiles USING btree (email),true,false
 profiles,profiles_pkey,CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id),true,true
+withdrawals,idx_withdrawals_balance_lookup,"CREATE INDEX idx_withdrawals_balance_lookup ON public.withdrawals USING btree (user_id, estado, fecha_solicitud DESC) INCLUDE (monto)",false,false
 withdrawals,idx_withdrawals_estado,CREATE INDEX idx_withdrawals_estado ON public.withdrawals USING btree (estado),false,false
 withdrawals,idx_withdrawals_estado_created,"CREATE INDEX idx_withdrawals_estado_created ON public.withdrawals USING btree (estado, created_at DESC) INCLUDE (user_id, monto)",false,false
 withdrawals,idx_withdrawals_estado_fecha,"CREATE INDEX idx_withdrawals_estado_fecha ON public.withdrawals USING btree (estado, fecha_solicitud DESC)",false,false
 withdrawals,idx_withdrawals_fecha_solicitud,CREATE INDEX idx_withdrawals_fecha_solicitud ON public.withdrawals USING btree (fecha_solicitud DESC),false,false
 withdrawals,idx_withdrawals_pending_only,"CREATE INDEX idx_withdrawals_pending_only ON public.withdrawals USING btree (user_id, monto, fecha_solicitud DESC) WHERE (estado = 'pendiente'::text)",false,false
-withdrawals,idx_withdrawals_pending_user,"CREATE INDEX idx_withdrawals_pending_user ON public.withdrawals USING btree (user_id, monto) WHERE (estado = 'pendiente'::text)",false,false
-withdrawals,idx_withdrawals_user_estado,"CREATE INDEX idx_withdrawals_user_estado ON public.withdrawals USING btree (user_id, estado)",false,false
 withdrawals,idx_withdrawals_user_estado_monto,"CREATE INDEX idx_withdrawals_user_estado_monto ON public.withdrawals USING btree (user_id, estado, monto)",false,false
-withdrawals,idx_withdrawals_user_id,CREATE INDEX idx_withdrawals_user_id ON public.withdrawals USING btree (user_id),false,false
-withdrawals,idx_withdrawals_user_pending,CREATE INDEX idx_withdrawals_user_pending ON public.withdrawals USING btree (user_id) WHERE (estado = 'pendiente'::text),false,false
+withdrawals,idx_withdrawals_user_recent,"CREATE INDEX idx_withdrawals_user_recent ON public.withdrawals USING btree (user_id, fecha_solicitud DESC) INCLUDE (monto, estado)",false,false
 withdrawals,withdrawals_pkey,CREATE UNIQUE INDEX withdrawals_pkey ON public.withdrawals USING btree (id),true,true
 
 
-//supabase policies 
+/// supabase policies 
 
 schemaname,tablename,policyname,permissive,roles,command,using_expression,check_expression
 public,daily_earnings,Admins ven todas las ganancias diarias,PERMISSIVE,{public},SELECT,"(EXISTS ( SELECT 1
@@ -107,14 +102,15 @@ public,withdrawals,admin_or_own_select_withdrawals,PERMISSIVE,{public},SELECT,((
 public,withdrawals,admin_update_withdrawals,PERMISSIVE,{public},UPDATE,is_admin(),is_admin()
 public,withdrawals,user_insert_withdrawals,PERMISSIVE,{public},INSERT,null,(( SELECT auth.uid() AS uid) = user_id)
 
-//supabse triggers 
+///supabase triggers
+
 table_name,trigger_name,event,action_timing,action_statement
 investments,investment_history_trigger,INSERT,AFTER,EXECUTE FUNCTION log_investment_change()
 investments,investment_history_trigger,UPDATE,AFTER,EXECUTE FUNCTION log_investment_change()
 investments,on_investment_created,INSERT,BEFORE,EXECUTE FUNCTION initialize_investment()
 
 
-//supabase triggers mas funciones asociadas 
+/// supabase triggers mas funciones 
 
 trigger_name,trigger_definition
 update_objects_updated_at,CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()
@@ -129,7 +125,7 @@ on_auth_user_created,CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.us
 on_investment_created,CREATE TRIGGER on_investment_created BEFORE INSERT ON investments FOR EACH ROW EXECUTE FUNCTION initialize_investment()
 investment_history_trigger,CREATE TRIGGER investment_history_trigger AFTER INSERT OR UPDATE ON investments FOR EACH ROW EXECUTE FUNCTION log_investment_change()
 
-//////supabase funciones 
+///supabase funciones 
 
 function_name,schema,definition
 calculate_withdrawal_balance,public,"CREATE OR REPLACE FUNCTION public.calculate_withdrawal_balance(p_user_id uuid, p_exclude_withdrawal_id uuid DEFAULT NULL::uuid)
@@ -466,12 +462,10 @@ $function$
 "
 get_client_dashboard_data,public,"CREATE OR REPLACE FUNCTION public.get_client_dashboard_data(p_user_id uuid)
  RETURNS json
- LANGUAGE plpgsql
+ LANGUAGE sql
  STABLE SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
-DECLARE
-  result JSON;
-BEGIN
   SELECT json_build_object(
     'investment', (
       SELECT json_build_object(
@@ -495,9 +489,9 @@ BEGIN
       ), '[]'::json)
       FROM withdrawals w
       WHERE w.user_id = p_user_id
+      LIMIT 20 -- ✅ LIMITAR A 20 RETIROS RECIENTES
     ),
     'total_earnings', (
-      -- ✅ USA daily_earnings en lugar de calcular
       SELECT COALESCE(SUM(earning_amount), 0)
       FROM daily_earnings
       WHERE user_id = p_user_id
@@ -515,10 +509,7 @@ BEGIN
       FROM daily_earnings de
       WHERE de.user_id = p_user_id
     )
-  ) INTO result;
-  
-  RETURN result;
-END;
+  );
 $function$
 "
 get_current_week_projection,public,"CREATE OR REPLACE FUNCTION public.get_current_week_projection(p_user_id uuid)
@@ -665,6 +656,39 @@ BEGIN
 END;
 $function$
 "
+get_withdrawals_with_balances,public,"CREATE OR REPLACE FUNCTION public.get_withdrawals_with_balances()
+ RETURNS TABLE(withdrawal_id uuid, user_id uuid, user_name text, user_email text, monto numeric, estado text, fecha_solicitud timestamp with time zone, available_balance numeric)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    w.id AS withdrawal_id,
+    w.user_id,
+    p.full_name AS user_name,
+    p.email AS user_email,
+    w.monto,
+    w.estado,
+    w.fecha_solicitud,
+    GREATEST(0, 
+      COALESCE(SUM(de.earning_amount), 0) - 
+      COALESCE((
+        SELECT SUM(monto) 
+        FROM withdrawals 
+        WHERE user_id = w.user_id 
+          AND estado IN ('pagado', 'pendiente')
+          AND id != w.id -- Excluir el retiro actual
+      ), 0)
+    ) AS available_balance
+  FROM withdrawals w
+  INNER JOIN profiles p ON p.id = w.user_id
+  LEFT JOIN daily_earnings de ON de.user_id = w.user_id
+  GROUP BY w.id, w.user_id, p.full_name, p.email, w.monto, w.estado, w.fecha_solicitud
+  ORDER BY w.fecha_solicitud DESC;
+END;
+$function$
+"
 handle_new_user,public,"CREATE OR REPLACE FUNCTION public.handle_new_user()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -747,9 +771,9 @@ END;
 $function$
 "
 
+//supabase funciones_rpc
 
-
-///supabase funciones rpc rpc_name,definition
+rpc_name,definition
 calculate_withdrawal_balance,"CREATE OR REPLACE FUNCTION public.calculate_withdrawal_balance(p_user_id uuid, p_exclude_withdrawal_id uuid DEFAULT NULL::uuid)
  RETURNS numeric
  LANGUAGE plpgsql
@@ -1084,12 +1108,10 @@ $function$
 "
 get_client_dashboard_data,"CREATE OR REPLACE FUNCTION public.get_client_dashboard_data(p_user_id uuid)
  RETURNS json
- LANGUAGE plpgsql
+ LANGUAGE sql
  STABLE SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
-DECLARE
-  result JSON;
-BEGIN
   SELECT json_build_object(
     'investment', (
       SELECT json_build_object(
@@ -1113,9 +1135,9 @@ BEGIN
       ), '[]'::json)
       FROM withdrawals w
       WHERE w.user_id = p_user_id
+      LIMIT 20 -- ✅ LIMITAR A 20 RETIROS RECIENTES
     ),
     'total_earnings', (
-      -- ✅ USA daily_earnings en lugar de calcular
       SELECT COALESCE(SUM(earning_amount), 0)
       FROM daily_earnings
       WHERE user_id = p_user_id
@@ -1133,10 +1155,7 @@ BEGIN
       FROM daily_earnings de
       WHERE de.user_id = p_user_id
     )
-  ) INTO result;
-  
-  RETURN result;
-END;
+  );
 $function$
 "
 get_current_week_projection,"CREATE OR REPLACE FUNCTION public.get_current_week_projection(p_user_id uuid)
@@ -1283,6 +1302,39 @@ BEGIN
 END;
 $function$
 "
+get_withdrawals_with_balances,"CREATE OR REPLACE FUNCTION public.get_withdrawals_with_balances()
+ RETURNS TABLE(withdrawal_id uuid, user_id uuid, user_name text, user_email text, monto numeric, estado text, fecha_solicitud timestamp with time zone, available_balance numeric)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    w.id AS withdrawal_id,
+    w.user_id,
+    p.full_name AS user_name,
+    p.email AS user_email,
+    w.monto,
+    w.estado,
+    w.fecha_solicitud,
+    GREATEST(0, 
+      COALESCE(SUM(de.earning_amount), 0) - 
+      COALESCE((
+        SELECT SUM(monto) 
+        FROM withdrawals 
+        WHERE user_id = w.user_id 
+          AND estado IN ('pagado', 'pendiente')
+          AND id != w.id -- Excluir el retiro actual
+      ), 0)
+    ) AS available_balance
+  FROM withdrawals w
+  INNER JOIN profiles p ON p.id = w.user_id
+  LEFT JOIN daily_earnings de ON de.user_id = w.user_id
+  GROUP BY w.id, w.user_id, p.full_name, p.email, w.monto, w.estado, w.fecha_solicitud
+  ORDER BY w.fecha_solicitud DESC;
+END;
+$function$
+"
 handle_new_user,"CREATE OR REPLACE FUNCTION public.handle_new_user()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -1364,4 +1416,3 @@ BEGIN
 END;
 $function$
 "
-
