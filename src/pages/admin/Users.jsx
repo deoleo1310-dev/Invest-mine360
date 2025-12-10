@@ -6,7 +6,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
-import { Plus, Pencil, TrendingUp, Loader2, Eye, EyeOff, Lock, AlertCircle } from 'lucide-react';
+import { Plus, Pencil, TrendingUp, Loader2, Eye, EyeOff, Lock, AlertCircle, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
 export default function AdminUsers() {
@@ -17,6 +17,7 @@ export default function AdminUsers() {
   const [actionLoading, setActionLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState(null);
   const { showSuccess, showError } = useToast();
   
   const [formData, setFormData] = useState({
@@ -26,10 +27,10 @@ export default function AdminUsers() {
     confirmPassword: '', 
     inversion_actual: '',
     tasa_diaria: '',
+    pendiente: '', // ✅ NUEVO
     add_investment: ''
   });
 
-  // ✅ OPTIMIZADO: 1 RPC en lugar de 100+ queries
   const loadUsers = async () => {
     try {
       setLoading(true);
@@ -39,17 +40,18 @@ export default function AdminUsers() {
 
       if (error) throw error;
       
-      // Transformar datos para compatibilidad con UI existente
       const usersWithEarnings = data.map(user => ({
         ...user,
         id: user.user_id,
         investment: user.investment_amount > 0 ? {
           inversion_actual: user.investment_amount,
-          tasa_diaria: user.daily_rate
+          tasa_diaria: user.daily_rate,
+          pendiente: user.pendiente || 0 // ✅ NUEVO
         } : null,
         totalEarnings: user.total_earnings,
         daysCount: user.days_count,
-        dailyRate: user.daily_rate
+        dailyRate: user.daily_rate,
+        pendiente: user.pendiente || 0 // ✅ NUEVO
       }));
       
       setUsers(usersWithEarnings);
@@ -74,6 +76,7 @@ export default function AdminUsers() {
         confirmPassword: '',
         inversion_actual: user.investment?.inversion_actual || 0,
         tasa_diaria: user.investment?.tasa_diaria || 0,
+        pendiente: user.investment?.pendiente || 0, // ✅ NUEVO
         add_investment: ''
       });
     } else {
@@ -84,10 +87,63 @@ export default function AdminUsers() {
         confirmPassword: '',
         inversion_actual: '',
         tasa_diaria: '',
+        pendiente: '', // ✅ NUEVO
         add_investment: ''
       });
     }
     setIsModalOpen(true);
+  };
+
+  // ✅ NUEVA FUNCIÓN: Eliminar Usuario
+  const handleDeleteUser = async (userId, userName) => {
+    if (!confirm(`¿Estás seguro de eliminar a ${userName}?\n\nEsta acción NO se puede deshacer y eliminará:\n- Su perfil\n- Su inversión\n- Todos sus retiros\n\n¿Continuar?`)) {
+      return;
+    }
+
+    setDeletingUserId(userId);
+
+    try {
+      // 1. Eliminar retiros
+      await supabase
+        .from('withdrawals')
+        .delete()
+        .eq('user_id', userId);
+
+      // 2. Eliminar investment_history
+      const { data: inv } = await supabase
+        .from('investments')
+        .select('id')
+        .eq('user_id', userId)
+        .single();
+
+      if (inv) {
+        await supabase
+          .from('investment_history')
+          .delete()
+          .eq('investment_id', inv.id);
+      }
+
+      // 3. Eliminar inversión
+      await supabase
+        .from('investments')
+        .delete()
+        .eq('user_id', userId);
+
+      // 4. Eliminar perfil (CASCADE eliminará de auth.users)
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+
+      if (profileError) throw profileError;
+
+      showSuccess(`Usuario ${userName} eliminado exitosamente`);
+      loadUsers();
+    } catch (error) {
+      showError('Error al eliminar: ' + error.message);
+    } finally {
+      setDeletingUserId(null);
+    }
   };
 
   const resetPassword = async (userId, newPassword) => {
@@ -167,7 +223,6 @@ export default function AdminUsers() {
         }
 
         if (editingUser.investment) {
-          // ✅ CAMBIADO: Obtener ID de inversión correctamente
           const { data: inv } = await supabase
             .from('investments')
             .select('id')
@@ -180,6 +235,7 @@ export default function AdminUsers() {
               .update({
                 inversion_actual: newInvestmentAmount,
                 tasa_diaria: Number(formData.tasa_diaria),
+                pendiente: Number(formData.pendiente || 0), // ✅ NUEVO
                 updated_at: new Date().toISOString()
               })
               .eq('id', inv.id);
@@ -192,7 +248,8 @@ export default function AdminUsers() {
             .insert({
               user_id: editingUser.id,
               inversion_actual: newInvestmentAmount,
-              tasa_diaria: Number(formData.tasa_diaria)
+              tasa_diaria: Number(formData.tasa_diaria),
+              pendiente: Number(formData.pendiente || 0) // ✅ NUEVO
             });
 
           if (createInvError) throw createInvError;
@@ -214,7 +271,6 @@ export default function AdminUsers() {
           throw new Error("Debes ingresar una tasa diaria");
         }
 
-        // 1. Crear usuario
         const tempClient = createSecondaryClient();
         
         const { data: authData, error: authError } = await tempClient.auth.signUp({
@@ -252,13 +308,13 @@ export default function AdminUsers() {
           });
         }
 
-        // 2. Crear inversión inicial
         const { error: invError } = await supabase
           .from('investments')
           .insert({
             user_id: newUserId,
             inversion_actual: Number(formData.inversion_actual),
             tasa_diaria: Number(formData.tasa_diaria),
+            pendiente: Number(formData.pendiente || 0), // ✅ NUEVO
             ganancia_acumulada: 0,
             created_at: new Date().toISOString()
           });
@@ -301,6 +357,20 @@ export default function AdminUsers() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {users.map((user) => (
             <Card key={user.id} className="relative">
+              {/* ✅ NUEVO: Botón Eliminar */}
+              <button 
+                onClick={() => handleDeleteUser(user.id, user.full_name)}
+                disabled={deletingUserId === user.id}
+                className="absolute top-4 right-14 text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-full transition-colors disabled:opacity-50"
+                title="Eliminar usuario"
+              >
+                {deletingUserId === user.id ? (
+                  <Loader2 className="animate-spin" size={18} />
+                ) : (
+                  <Trash2 size={18} />
+                )}
+              </button>
+
               <button 
                 onClick={() => handleOpenModal(user)}
                 className="absolute top-4 right-4 text-neutral-gray hover:text-primary p-2 hover:bg-neutral-bg rounded-full transition-colors"
@@ -320,6 +390,12 @@ export default function AdminUsers() {
                   <Badge variant="success">
                     Tasa: {user.daily_rate || 0}% diaria
                   </Badge>
+                  {/* ✅ NUEVO: Badge Pendiente */}
+                  {user.pendiente > 0 && (
+                    <Badge variant="error">
+                      Pendiente: ${Number(user.pendiente).toLocaleString()}
+                    </Badge>
+                  )}
                 </div>
                 
                 <div className="flex items-center gap-2 text-status-success font-medium bg-status-success/5 p-2 rounded-lg">
@@ -347,7 +423,7 @@ export default function AdminUsers() {
         onClose={() => setIsModalOpen(false)}
         title={editingUser ? "Editar Cliente" : "Nuevo Cliente"}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-4">
           <Input 
             label="Nombre Completo"
             value={formData.full_name}
@@ -456,6 +532,16 @@ export default function AdminUsers() {
             />
           </div>
 
+          {/* ✅ NUEVO: Campo Pendiente */}
+          <Input 
+            label="💰 Pendiente ($)"
+            type="number"
+            step="0.01"
+            value={formData.pendiente}
+            onChange={e => setFormData({...formData, pendiente: e.target.value})}
+            placeholder="0"
+          />
+
           {editingUser && (
             <div className="bg-primary-light/30 p-4 rounded-lg border border-primary-light">
               <label className="text-sm font-medium text-primary-dark block mb-2">
@@ -476,7 +562,11 @@ export default function AdminUsers() {
             </div>
           )}
 
-          <Button type="submit" className="w-full mt-4" disabled={actionLoading}>
+          <Button 
+            onClick={handleSubmit} 
+            className="w-full mt-4" 
+            disabled={actionLoading}
+          >
             {actionLoading ? (
               <>
                 <Loader2 className="animate-spin" />
@@ -486,7 +576,7 @@ export default function AdminUsers() {
               editingUser ? 'Guardar Cambios' : 'Crear Cliente'
             )}
           </Button>
-        </form>
+        </div>
       </Modal>
     </div>
   );

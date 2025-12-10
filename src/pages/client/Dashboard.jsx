@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import { Card } from '../../components/ui/Card';
@@ -10,9 +10,9 @@ import { differenceInDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useToast } from '../../context/ToastContext';
 
-// ✅ CACHÉ OPTIMIZADO (5 minutos)
+// ✅ CACHÉ OPTIMIZADO (30 segundos)
 class DataCache {
-  constructor(ttl = 300000) { // 5 minutos
+  constructor(ttl = 30000) {
     this.cache = new Map();
     this.pendingRequests = new Map();
     this.ttl = ttl;
@@ -63,7 +63,7 @@ class DataCache {
   }
 }
 
-const clientCache = new DataCache(30000); // 30
+const clientCache = new DataCache(30000);
 
 export default function ClientDashboard() {
   const { user } = useAuth();
@@ -76,10 +76,8 @@ export default function ClientDashboard() {
   const [totalEarnings, setTotalEarnings] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  
-  const isMountedRef = useRef(true);
 
-  // ✅ FETCH CON RPC (1 llamada en lugar de 2)
+  // ✅ FETCH CON RPC (1 llamada)
   const fetchClientData = useCallback(async (userId) => {
     return clientCache.getOrFetch(userId, async () => {
       const { data, error } = await supabase
@@ -89,14 +87,14 @@ export default function ClientDashboard() {
 
       return {
         investment: data.investment,
-        withdrawals: data.withdrawals,
+        withdrawals: data.withdrawals || [],
         availableBalance: data.available_balance,
         totalEarnings: data.total_earnings
       };
     });
   }, []);
 
-  // ✅ EFECTO: Carga inicial
+  // ✅ CARGA INICIAL
   useEffect(() => {
     if (!user?.id) return;
 
@@ -114,8 +112,9 @@ export default function ClientDashboard() {
           setTotalEarnings(data.totalEarnings);
         }
       } catch (error) {
+        console.error('Load error:', error);
         if (mounted) {
-          showError('Error al cargar datos. Por favor, recarga la página.');
+          showError('Error al cargar datos: ' + error.message);
         }
       } finally {
         if (mounted) {
@@ -164,7 +163,7 @@ export default function ClientDashboard() {
     };
   }, [investment, withdrawals]);
 
-  // ✅ HANDLER: Solicitar Retiro
+  // ✅ SOLICITAR RETIRO
   const handleWithdrawRequest = async (e) => {
     e.preventDefault();
     
@@ -179,7 +178,7 @@ export default function ClientDashboard() {
     if (amount > available) {
       showError(
         `Fondos insuficientes.\n\n` +
-        `Disponible: $${available}\n` +
+        `Disponible: $${available.toFixed(2)}\n` +
         (Number(funds.pendingWithdrawals) > 0 
           ? `(Tienes $${funds.pendingWithdrawals} en retiros pendientes)` 
           : '')
@@ -215,19 +214,20 @@ export default function ClientDashboard() {
       );
       
     } catch (error) {
+      console.error('Withdraw error:', error);
       showError('Error al procesar la solicitud: ' + error.message);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ✅ HANDLER: Invertir Más
+  // ✅ INVERTIR MÁS
   const handleInvestClick = useCallback(() => {
     alert("Por favor enviar el comprobante de pago al WhatsApp del administrador");
     window.open('https://www.paypal.com/paypalme/DevonBrantPierre2025', '_blank');
   }, []);
 
-  // ✅ RENDER: Estado de Carga
+  // ✅ LOADING
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-[60vh]">
@@ -239,7 +239,7 @@ export default function ClientDashboard() {
     );
   }
 
-  // ✅ RENDER: Sin Inversión
+  // ✅ SIN INVERSIÓN
   if (!investment) {
     return (
       <div className="max-w-2xl mx-auto text-center py-20">
@@ -256,7 +256,7 @@ export default function ClientDashboard() {
     );
   }
 
-  // ✅ RENDER: Dashboard Principal
+  // ✅ DASHBOARD PRINCIPAL
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* Header Stats */}
@@ -416,27 +416,43 @@ export default function ClientDashboard() {
               </Card>
             ) : (
               withdrawals.map((w) => (
-                <Card key={w.id} className="flex items-center justify-between hover:shadow-md transition-shadow">
-                  <div>
-                    <p className="font-bold text-neutral-text">Retiro de ganancia</p>
-                    <p className="text-xs text-neutral-gray">
-                      {format(new Date(w.fecha_solicitud), "d 'de' MMMM, yyyy", { locale: es })}
-                    </p>
+                <Card key={w.id} className="hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="font-bold text-neutral-text">Retiro de ganancia</p>
+                      <p className="text-xs text-neutral-gray">
+                        {format(new Date(w.fecha_solicitud), "d 'de' MMMM, yyyy", { locale: es })}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="block font-bold text-xl mb-1">
+                        ${Number(w.monto).toLocaleString()}
+                      </span>
+                      <Badge 
+                        variant={
+                          w.estado === 'pagado' ? 'success' : 
+                          w.estado === 'rechazado' ? 'error' : 
+                          'warning'
+                        }
+                      >
+                        {w.estado === 'pagado' ? '✓ Pagado' : 
+                         w.estado === 'rechazado' ? '✗ Rechazado' : 
+                         '⏳ Pendiente'}
+                      </Badge>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="block font-bold text-xl mb-1">${Number(w.monto).toLocaleString()}</span>
-                    <Badge 
-                      variant={
-                        w.estado === 'pagado' ? 'success' : 
-                        w.estado === 'rechazado' ? 'error' : 
-                        'warning'
-                      }
-                    >
-                      {w.estado === 'pagado' ? '✓ Pagado' : 
-                       w.estado === 'rechazado' ? '✗ Rechazado' : 
-                       '⏳ Pendiente'}
-                    </Badge>
-                  </div>
+
+                  {/* ✅ MOSTRAR COMENTARIO DE RECHAZO */}
+                  {w.estado === 'rechazado' && w.comentario_rechazo && (
+                    <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-xs font-semibold text-red-900 mb-1">
+                        Motivo del rechazo:
+                      </p>
+                      <p className="text-sm text-red-700">
+                        {w.comentario_rechazo}
+                      </p>
+                    </div>
+                  )}
                 </Card>
               ))
             )}
