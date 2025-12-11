@@ -6,7 +6,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
-import { Plus, Pencil, TrendingUp, Loader2, Eye, EyeOff, Lock, AlertCircle, Trash2 } from 'lucide-react';
+import { Plus, Pencil, TrendingUp, Loader2, Eye, EyeOff, Lock, AlertCircle, Trash2, Zap } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
 export default function AdminUsers() {
@@ -18,7 +18,8 @@ export default function AdminUsers() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [deletingUserId, setDeletingUserId] = useState(null);
-  const { showSuccess, showError } = useToast();
+  const [generatingEarnings, setGeneratingEarnings] = useState(false);
+  const { showSuccess, showError, showInfo } = useToast();
   
   const [formData, setFormData] = useState({
     full_name: '',
@@ -27,7 +28,7 @@ export default function AdminUsers() {
     confirmPassword: '', 
     inversion_actual: '',
     tasa_diaria: '',
-    pendiente: '', // ✅ NUEVO
+    pendiente: '',
     add_investment: ''
   });
 
@@ -46,12 +47,12 @@ export default function AdminUsers() {
         investment: user.investment_amount > 0 ? {
           inversion_actual: user.investment_amount,
           tasa_diaria: user.daily_rate,
-          pendiente: user.pendiente || 0 // ✅ NUEVO
+          pendiente: user.pendiente || 0
         } : null,
         totalEarnings: user.total_earnings,
         daysCount: user.days_count,
         dailyRate: user.daily_rate,
-        pendiente: user.pendiente || 0 // ✅ NUEVO
+        pendiente: user.pendiente || 0
       }));
       
       setUsers(usersWithEarnings);
@@ -66,6 +67,48 @@ export default function AdminUsers() {
     loadUsers();
   }, []);
 
+  // ✅ NUEVA FUNCIÓN: Generar Ganancias Diarias
+  const handleGenerateEarnings = async () => {
+    if (!confirm('¿Generar las ganancias del día para TODOS los usuarios?\n\nEsta acción solo puede hacerse UNA VEZ por día.')) {
+      return;
+    }
+
+    setGeneratingEarnings(true);
+
+    try {
+      const { data, error } = await supabase
+        .rpc('generate_daily_earnings_manual');
+
+      if (error) throw error;
+
+      const result = data;
+
+      if (!result.success) {
+        showError(result.message);
+        return;
+      }
+
+      showSuccess(
+        `✅ ${result.message}\n\n` +
+        `📅 Fecha: ${new Date(result.date).toLocaleDateString('es-DO')}\n` +
+        `👥 Usuarios afectados: ${result.users_affected}\n` +
+        `💰 Total generado: $${Number(result.total_generated).toLocaleString('es-DO', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        })}`
+      );
+
+      // Recargar usuarios para ver los cambios
+      loadUsers();
+
+    } catch (error) {
+      console.error('Error generando ganancias:', error);
+      showError('Error al generar ganancias: ' + error.message);
+    } finally {
+      setGeneratingEarnings(false);
+    }
+  };
+
   const handleOpenModal = (user = null) => {
     setEditingUser(user);
     if (user) {
@@ -76,7 +119,7 @@ export default function AdminUsers() {
         confirmPassword: '',
         inversion_actual: user.investment?.inversion_actual || 0,
         tasa_diaria: user.investment?.tasa_diaria || 0,
-        pendiente: user.investment?.pendiente || 0, // ✅ NUEVO
+        pendiente: user.investment?.pendiente || 0,
         add_investment: ''
       });
     } else {
@@ -87,14 +130,13 @@ export default function AdminUsers() {
         confirmPassword: '',
         inversion_actual: '',
         tasa_diaria: '',
-        pendiente: '', // ✅ NUEVO
+        pendiente: '',
         add_investment: ''
       });
     }
     setIsModalOpen(true);
   };
 
-  // ✅ NUEVA FUNCIÓN: Eliminar Usuario
   const handleDeleteUser = async (userId, userName) => {
     if (!confirm(`¿Estás seguro de eliminar a ${userName}?\n\nEsta acción NO se puede deshacer y eliminará:\n- Su perfil\n- Su inversión\n- Todos sus retiros\n\n¿Continuar?`)) {
       return;
@@ -103,13 +145,8 @@ export default function AdminUsers() {
     setDeletingUserId(userId);
 
     try {
-      // 1. Eliminar retiros
-      await supabase
-        .from('withdrawals')
-        .delete()
-        .eq('user_id', userId);
+      await supabase.from('withdrawals').delete().eq('user_id', userId);
 
-      // 2. Eliminar investment_history
       const { data: inv } = await supabase
         .from('investments')
         .select('id')
@@ -117,19 +154,11 @@ export default function AdminUsers() {
         .single();
 
       if (inv) {
-        await supabase
-          .from('investment_history')
-          .delete()
-          .eq('investment_id', inv.id);
+        await supabase.from('investment_history').delete().eq('investment_id', inv.id);
       }
 
-      // 3. Eliminar inversión
-      await supabase
-        .from('investments')
-        .delete()
-        .eq('user_id', userId);
+      await supabase.from('investments').delete().eq('user_id', userId);
 
-      // 4. Eliminar perfil (CASCADE eliminará de auth.users)
       const { error: profileError } = await supabase
         .from('profiles')
         .delete()
@@ -187,9 +216,6 @@ export default function AdminUsers() {
     
     try {
       if (editingUser) {
-        // --- MODO EDICIÓN ---
-        
-        // 1. Actualizar Perfil
         const { error: profileError } = await supabase
           .from('profiles')
           .update({ full_name: formData.full_name })
@@ -197,7 +223,6 @@ export default function AdminUsers() {
 
         if (profileError) throw profileError;
 
-        // 2. Cambiar contraseña si se proporcionó
         if (formData.password) {
           if (formData.password !== formData.confirmPassword) {
             throw new Error('Las contraseñas no coinciden');
@@ -215,7 +240,6 @@ export default function AdminUsers() {
           }
         }
 
-        // 3. Actualizar/Crear Inversión
         let newInvestmentAmount = Number(formData.inversion_actual);
         
         if (formData.add_investment && Number(formData.add_investment) > 0) {
@@ -235,7 +259,7 @@ export default function AdminUsers() {
               .update({
                 inversion_actual: newInvestmentAmount,
                 tasa_diaria: Number(formData.tasa_diaria),
-                pendiente: Number(formData.pendiente || 0), // ✅ NUEVO
+                pendiente: Number(formData.pendiente || 0),
                 updated_at: new Date().toISOString()
               })
               .eq('id', inv.id);
@@ -249,7 +273,7 @@ export default function AdminUsers() {
               user_id: editingUser.id,
               inversion_actual: newInvestmentAmount,
               tasa_diaria: Number(formData.tasa_diaria),
-              pendiente: Number(formData.pendiente || 0) // ✅ NUEVO
+              pendiente: Number(formData.pendiente || 0)
             });
 
           if (createInvError) throw createInvError;
@@ -257,8 +281,6 @@ export default function AdminUsers() {
 
         showSuccess('Usuario actualizado exitosamente');
       } else {
-        // --- MODO CREACIÓN ---
-        
         if (!formData.password || formData.password.length < 6) {
           throw new Error("La contraseña debe tener al menos 6 caracteres");
         }
@@ -314,7 +336,7 @@ export default function AdminUsers() {
             user_id: newUserId,
             inversion_actual: Number(formData.inversion_actual),
             tasa_diaria: Number(formData.tasa_diaria),
-            pendiente: Number(formData.pendiente || 0), // ✅ NUEVO
+            pendiente: Number(formData.pendiente || 0),
             ganancia_acumulada: 0,
             created_at: new Date().toISOString()
           });
@@ -335,11 +357,33 @@ export default function AdminUsers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-primary-dark">Gestión de Usuarios</h2>
-        <Button onClick={() => handleOpenModal()}>
-          <Plus size={18} /> Nuevo Cliente
-        </Button>
+        
+        <div className="flex gap-2">
+          {/* ✅ BOTÓN GENERAR GANANCIAS */}
+          <Button 
+            onClick={handleGenerateEarnings}
+            disabled={generatingEarnings}
+            className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
+          >
+            {generatingEarnings ? (
+              <>
+                <Loader2 className="animate-spin" size={18} />
+                <span>Generando...</span>
+              </>
+            ) : (
+              <>
+                <Zap size={18} />
+                <span>Generar Ganancias</span>
+              </>
+            )}
+          </Button>
+
+          <Button onClick={() => handleOpenModal()}>
+            <Plus size={18} /> Nuevo Cliente
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -357,7 +401,6 @@ export default function AdminUsers() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {users.map((user) => (
             <Card key={user.id} className="relative">
-              {/* ✅ NUEVO: Botón Eliminar */}
               <button 
                 onClick={() => handleDeleteUser(user.id, user.full_name)}
                 disabled={deletingUserId === user.id}
@@ -390,10 +433,10 @@ export default function AdminUsers() {
                   <Badge variant="success">
                     Tasa: {user.daily_rate || 0}% diaria
                   </Badge>
-                  {/* ✅ NUEVO: Badge Pendiente */}
+                  {/* ✅ BADGE FALTANTE */}
                   {user.pendiente > 0 && (
-                    <Badge variant="error">
-                      Pendiente: ${Number(user.pendiente).toLocaleString()}
+                    <Badge variant="warning">
+                      Faltante: ${Number(user.pendiente).toLocaleString()}
                     </Badge>
                   )}
                 </div>
@@ -442,7 +485,6 @@ export default function AdminUsers() {
             placeholder="juan@example.com"
           />
 
-          {/* Sección de contraseña */}
           <div className="space-y-4 border-t pt-4">
             <div className="flex items-center gap-2 text-sm text-neutral-gray">
               <Lock size={16} />
@@ -532,9 +574,9 @@ export default function AdminUsers() {
             />
           </div>
 
-          {/* ✅ NUEVO: Campo Pendiente */}
+          {/* ✅ CAMPO FALTANTE */}
           <Input 
-            label="💰 Pendiente ($)"
+            label="💳 Faltante ($)"
             type="number"
             step="0.01"
             value={formData.pendiente}

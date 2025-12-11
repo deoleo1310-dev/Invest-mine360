@@ -5,12 +5,11 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus, AlertTriangle } from 'lucide-react';
+import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus, AlertTriangle, CreditCard } from 'lucide-react';
 import { differenceInDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useToast } from '../../context/ToastContext';
 
-// ✅ CACHÉ OPTIMIZADO (30 segundos)
 class DataCache {
   constructor(ttl = 30000) {
     this.cache = new Map();
@@ -77,7 +76,6 @@ export default function ClientDashboard() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // ✅ FETCH CON RPC (1 llamada)
   const fetchClientData = useCallback(async (userId) => {
     return clientCache.getOrFetch(userId, async () => {
       const { data, error } = await supabase
@@ -94,7 +92,6 @@ export default function ClientDashboard() {
     });
   }, []);
 
-  // ✅ CARGA INICIAL
   useEffect(() => {
     if (!user?.id) return;
 
@@ -130,7 +127,6 @@ export default function ClientDashboard() {
     };
   }, [user?.id, fetchClientData, showError]);
 
-  // ✅ CALCULAR DATOS DERIVADOS
   const funds = useMemo(() => {
     if (!investment?.inversion_actual || !investment?.tasa_diaria) {
       return {
@@ -138,7 +134,8 @@ export default function ClientDashboard() {
         dailyRate: 0,
         dailyGain: 0,
         paidWithdrawals: 0,
-        pendingWithdrawals: 0
+        pendingWithdrawals: 0,
+        faltante: 0
       };
     }
     
@@ -154,16 +151,19 @@ export default function ClientDashboard() {
       .filter(w => w.estado === 'pendiente')
       .reduce((acc, curr) => acc + Number(curr.monto), 0);
     
+    // ✅ FALTANTE desde la inversión
+    const faltante = Number(investment.pendiente || 0);
+    
     return {
       days,
       dailyRate: dailyRate.toFixed(4),
       dailyGain: dailyGain.toFixed(2),
       paidWithdrawals: paidWithdrawals.toFixed(2),
-      pendingWithdrawals: pendingWithdrawals.toFixed(2)
+      pendingWithdrawals: pendingWithdrawals.toFixed(2),
+      faltante: faltante.toFixed(2)
     };
   }, [investment, withdrawals]);
 
-  // ✅ SOLICITAR RETIRO
   const handleWithdrawRequest = async (e) => {
     e.preventDefault();
     
@@ -201,7 +201,6 @@ export default function ClientDashboard() {
 
       if (error) throw error;
 
-      // Actualizar estado local
       setWithdrawals(prev => [data, ...prev]);
       setAvailableBalance(prev => prev - amount);
       setWithdrawAmount('');
@@ -221,13 +220,11 @@ export default function ClientDashboard() {
     }
   };
 
-  // ✅ INVERTIR MÁS
   const handleInvestClick = useCallback(() => {
     alert("Por favor enviar el comprobante de pago al WhatsApp del administrador");
     window.open('https://www.paypal.com/paypalme/DevonBrantPierre2025', '_blank');
   }, []);
 
-  // ✅ LOADING
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-[60vh]">
@@ -239,7 +236,6 @@ export default function ClientDashboard() {
     );
   }
 
-  // ✅ SIN INVERSIÓN
   if (!investment) {
     return (
       <div className="max-w-2xl mx-auto text-center py-20">
@@ -256,10 +252,8 @@ export default function ClientDashboard() {
     );
   }
 
-  // ✅ DASHBOARD PRINCIPAL
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
-      {/* Header Stats */}
       <section>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-primary-dark">Mi Inversión</h2>
@@ -280,9 +274,14 @@ export default function ClientDashboard() {
               <TrendingUp size={16} />
               <span>{funds.dailyRate}% Diaria</span>
             </div>
-            <p className="text-xs text-white/70 mt-2">
-              ({(investment.tasa_diaria * 30).toFixed(2)}% mensual aprox)
-            </p>
+            
+            {/* ✅ MOSTRAR FALTANTE EN VEZ DE MENSUAL */}
+            {Number(funds.faltante) > 0 && (
+              <div className="mt-3 flex items-center gap-2 bg-amber-400/20 text-amber-100 px-2 py-1 rounded text-sm">
+                <CreditCard size={14} />
+                <span className="font-medium">Faltante: ${funds.faltante}</span>
+              </div>
+            )}
           </Card>
 
           {/* Card 2: Ganancia Diaria */}
@@ -326,7 +325,6 @@ export default function ClientDashboard() {
           </Card>
         </div>
 
-        {/* CTA Invertir Más */}
         <Card className="mt-4 bg-primary-light/20 border-primary-light">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
@@ -344,7 +342,6 @@ export default function ClientDashboard() {
         </Card>
       </section>
 
-      {/* Withdraw Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <section className="lg:col-span-1">
           <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-primary-light/50">
@@ -402,7 +399,6 @@ export default function ClientDashboard() {
           </Card>
         </section>
 
-        {/* Historial */}
         <section className="lg:col-span-2">
           <h3 className="font-bold text-neutral-text mb-4 flex items-center gap-2">
             <Clock size={20} /> Historial de Retiros
@@ -442,7 +438,6 @@ export default function ClientDashboard() {
                     </div>
                   </div>
 
-                  {/* ✅ MOSTRAR COMENTARIO DE RECHAZO */}
                   {w.estado === 'rechazado' && w.comentario_rechazo && (
                     <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3">
                       <p className="text-xs font-semibold text-red-900 mb-1">
