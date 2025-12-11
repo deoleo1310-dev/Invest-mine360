@@ -136,17 +136,18 @@ export default function AdminUsers() {
     }
     setIsModalOpen(true);
   };
-
-  const handleDeleteUser = async (userId, userName) => {
-    if (!confirm(`¿Estás seguro de eliminar a ${userName}?\n\nEsta acción NO se puede deshacer y eliminará:\n- Su perfil\n- Su inversión\n- Todos sus retiros\n\n¿Continuar?`)) {
+const handleDeleteUser = async (userId, userName) => {
+    if (!confirm(`¿Estás seguro de eliminar a ${userName}?\n\nEsta acción NO se puede deshacer y eliminará:\n- Su cuenta de autenticación\n- Su perfil\n- Su inversión\n- Todos sus retiros\n\n¿Continuar?`)) {
       return;
     }
 
     setDeletingUserId(userId);
 
     try {
+      // 1. Eliminar retiros
       await supabase.from('withdrawals').delete().eq('user_id', userId);
 
+      // 2. Eliminar historial de inversión
       const { data: inv } = await supabase
         .from('investments')
         .select('id')
@@ -155,20 +156,44 @@ export default function AdminUsers() {
 
       if (inv) {
         await supabase.from('investment_history').delete().eq('investment_id', inv.id);
+        await supabase.from('daily_earnings').delete().eq('investment_id', inv.id);
       }
 
+      // 3. Eliminar inversión
       await supabase.from('investments').delete().eq('user_id', userId);
 
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', userId);
+      // 4. Eliminar perfil (profiles tiene ON DELETE CASCADE a auth.users)
+      await supabase.from('profiles').delete().eq('id', userId);
 
-      if (profileError) throw profileError;
+      // 5. ✅ LLAMAR A LA EDGE FUNCTION PARA ELIMINAR DE AUTH.USERS
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No hay sesión activa');
+      }
 
-      showSuccess(`Usuario ${userName} eliminado exitosamente`);
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ userId })
+        }
+      );
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Error al eliminar usuario de auth');
+      }
+
+      showSuccess(`✅ Usuario ${userName} eliminado completamente`);
       loadUsers();
     } catch (error) {
+      console.error('Delete error:', error);
       showError('Error al eliminar: ' + error.message);
     } finally {
       setDeletingUserId(null);

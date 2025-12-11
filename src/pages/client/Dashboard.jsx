@@ -275,11 +275,14 @@ export default function ClientDashboard() {
               <span>{funds.dailyRate}% Diaria</span>
             </div>
             
-            {/* ✅ MOSTRAR FALTANTE EN VEZ DE MENSUAL */}
+               {/* ✅ MOSTRAR FALTANTE */}
             {Number(funds.faltante) > 0 && (
-              <div className="mt-3 flex items-center gap-2 bg-amber-400/20 text-amber-100 px-2 py-1 rounded text-sm">
-                <CreditCard size={14} />
-                <span className="font-medium">Faltante: ${funds.faltante}</span>
+              <div className="mt-3 flex items-center gap-2 bg-amber-400/20 text-amber-100 px-3 py-2 rounded-lg text-sm border border-amber-300/30">
+                <CreditCard size={16} />
+                <div>
+                  <p className="text-xs font-medium">💳 Faltante</p>
+                  <p className="text-lg font-bold">${funds.faltante}</p>
+                </div>
               </div>
             )}
           </Card>
