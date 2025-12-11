@@ -222,7 +222,7 @@ export default function ClientDashboard() {
 
   const handleInvestClick = useCallback(() => {
     alert("Por favor enviar el comprobante de pago al WhatsApp del administrador");
-    window.open('https://www.paypal.com/paypalme/DevonBrantPierre2025', '_blank');
+    window.open('https://www.paypal.me/DannyAlvarez604', '_blank');
   }, []);
 
   if (loading) {
