@@ -5,7 +5,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus, AlertTriangle, CreditCard } from 'lucide-react';
+import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus, AlertTriangle, CreditCard, Info } from 'lucide-react';
 import { differenceInDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useToast } from '../../context/ToastContext';
@@ -75,6 +75,7 @@ export default function ClientDashboard() {
   const [totalEarnings, setTotalEarnings] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [withdrawalLimit, setWithdrawalLimit] = useState(null); // ✅ NUEVO
 
   const fetchClientData = useCallback(async (userId) => {
     return clientCache.getOrFetch(userId, async () => {
@@ -92,6 +93,20 @@ export default function ClientDashboard() {
     });
   }, []);
 
+  // ✅ NUEVA: Verificar límite de retiros
+  const checkWithdrawalLimit = useCallback(async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .rpc('can_user_request_withdrawal', { p_user_id: userId });
+
+      if (error) throw error;
+      
+      setWithdrawalLimit(data);
+    } catch (error) {
+      console.error('Error checking withdrawal limit:', error);
+    }
+  }, []);
+
   useEffect(() => {
     if (!user?.id) return;
 
@@ -107,6 +122,9 @@ export default function ClientDashboard() {
           setWithdrawals(data.withdrawals);
           setAvailableBalance(data.availableBalance);
           setTotalEarnings(data.totalEarnings);
+          
+          // ✅ NUEVO: Verificar límite de retiros
+          await checkWithdrawalLimit(user.id);
         }
       } catch (error) {
         console.error('Load error:', error);
@@ -125,7 +143,7 @@ export default function ClientDashboard() {
     return () => {
       mounted = false;
     };
-  }, [user?.id, fetchClientData, showError]);
+  }, [user?.id, fetchClientData, checkWithdrawalLimit, showError]);
 
   const funds = useMemo(() => {
     if (!investment?.inversion_actual || !investment?.tasa_diaria) {
@@ -151,7 +169,6 @@ export default function ClientDashboard() {
       .filter(w => w.estado === 'pendiente')
       .reduce((acc, curr) => acc + Number(curr.monto), 0);
     
-    // ✅ FALTANTE desde la inversión
     const faltante = Number(investment.pendiente || 0);
     
     return {
@@ -169,6 +186,16 @@ export default function ClientDashboard() {
     
     const amount = Number(withdrawAmount);
     const available = Number(availableBalance);
+
+    // ✅ NUEVA: Validación de límite de retiros
+    if (withdrawalLimit && !withdrawalLimit.can_request) {
+      showError(
+        `⚠️ ${withdrawalLimit.message}\n\n` +
+        `Tienes ${withdrawalLimit.pending_count} retiros pendientes.\n` +
+        `Espera a que el administrador los procese antes de solicitar más.`
+      );
+      return;
+    }
 
     if (amount < 50) {
       showError('El retiro mínimo es de $50');
@@ -199,7 +226,16 @@ export default function ClientDashboard() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // ✅ NUEVA: Capturar error del trigger
+        if (error.message.includes('Límite alcanzado')) {
+          throw new Error(
+            'Ya tienes 5 retiros pendientes.\n' +
+            'Espera a que se procesen antes de solicitar otro.'
+          );
+        }
+        throw error;
+      }
 
       setWithdrawals(prev => [data, ...prev]);
       setAvailableBalance(prev => prev - amount);
@@ -207,14 +243,18 @@ export default function ClientDashboard() {
       
       clientCache.invalidate(user.id);
       
+      // ✅ NUEVO: Actualizar límite después de crear retiro
+      await checkWithdrawalLimit(user.id);
+      
       showSuccess(
         `✅ Retiro de $${amount} solicitado exitosamente\n` +
-        `Nuevo balance disponible: $${(available - amount).toFixed(2)}`
+        `Nuevo balance disponible: $${(available - amount).toFixed(2)}\n\n` +
+        `${withdrawalLimit ? `Retiros disponibles: ${withdrawalLimit.remaining_slots - 1}/5` : ''}`
       );
       
     } catch (error) {
       console.error('Withdraw error:', error);
-      showError('Error al procesar la solicitud: ' + error.message);
+      showError(error.message || 'Error al procesar la solicitud');
     } finally {
       setSubmitting(false);
     }
@@ -222,7 +262,7 @@ export default function ClientDashboard() {
 
   const handleInvestClick = useCallback(() => {
     alert("Por favor enviar el comprobante de pago al WhatsApp del administrador");
-    window.open('https://www.paypal.me/DannyAlvarez604', '_blank');
+    window.open('https://www.paypal.com/paypalme/DevonBrantPierre2025', '_blank');
   }, []);
 
   if (loading) {
@@ -275,14 +315,10 @@ export default function ClientDashboard() {
               <span>{funds.dailyRate}% Diaria</span>
             </div>
             
-               {/* ✅ MOSTRAR FALTANTE */}
             {Number(funds.faltante) > 0 && (
-              <div className="mt-3 flex items-center gap-2 bg-amber-400/20 text-amber-100 px-3 py-2 rounded-lg text-sm border border-amber-300/30">
-                <CreditCard size={16} />
-                <div>
-                  <p className="text-xs font-medium">💳 Faltante</p>
-                  <p className="text-lg font-bold">${funds.faltante}</p>
-                </div>
+              <div className="mt-3 flex items-center gap-2 bg-amber-400/20 text-amber-100 px-2 py-1 rounded text-sm">
+                <CreditCard size={14} />
+                <span className="font-medium">Faltante: ${funds.faltante}</span>
               </div>
             )}
           </Card>
@@ -294,7 +330,7 @@ export default function ClientDashboard() {
               ${funds.dailyGain}
             </h3>
             <p className="text-xs text-white/80 mt-2">
-              Total acumulado: ${Number(totalEarnings).toFixed(2)}
+              Total generado: ${Number(totalEarnings).toFixed(2)}
             </p>
           </Card>
 
@@ -352,6 +388,33 @@ export default function ClientDashboard() {
               <DollarSign size={20} /> Solicitar Retiro
             </h3>
             
+            {/* ✅ NUEVO: Indicador de límite de retiros */}
+            {withdrawalLimit && (
+              <div className={`mb-4 p-3 rounded-lg border ${
+                withdrawalLimit.can_request 
+                  ? 'bg-green-50 border-green-200' 
+                  : 'bg-red-50 border-red-200'
+              }`}>
+                <div className="flex items-start gap-2">
+                  <Info size={16} className={`mt-0.5 flex-shrink-0 ${
+                    withdrawalLimit.can_request ? 'text-green-600' : 'text-red-600'
+                  }`} />
+                  <div className="flex-1">
+                    <p className={`text-sm font-medium ${
+                      withdrawalLimit.can_request ? 'text-green-900' : 'text-red-900'
+                    }`}>
+                      {withdrawalLimit.message}
+                    </p>
+                    <p className={`text-xs mt-1 ${
+                      withdrawalLimit.can_request ? 'text-green-700' : 'text-red-700'
+                    }`}>
+                      Retiros disponibles: {withdrawalLimit.remaining_slots}/5
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <form onSubmit={handleWithdrawRequest} className="space-y-4">
               <div className="bg-white p-4 rounded-lg border border-primary-light/50 shadow-sm">
                 <p className="text-xs text-neutral-gray mb-1">Disponible</p>
@@ -374,14 +437,18 @@ export default function ClientDashboard() {
                 onChange={e => setWithdrawAmount(e.target.value)}
                 min="50"
                 max={availableBalance}
-                disabled={submitting || Number(availableBalance) < 50}
+                disabled={submitting || Number(availableBalance) < 50 || (withdrawalLimit && !withdrawalLimit.can_request)}
               />
               
               <Button 
                 type="submit"
                 variant="success" 
                 className="w-full" 
-                disabled={submitting || Number(availableBalance) < 50}
+                disabled={
+                  submitting || 
+                  Number(availableBalance) < 50 || 
+                  (withdrawalLimit && !withdrawalLimit.can_request)
+                }
               >
                 {submitting ? (
                   <>
@@ -396,6 +463,12 @@ export default function ClientDashboard() {
               {Number(availableBalance) < 50 && (
                 <p className="text-xs text-neutral-gray text-center">
                   Necesitas al menos $50 para retirar
+                </p>
+              )}
+              
+              {withdrawalLimit && !withdrawalLimit.can_request && (
+                <p className="text-xs text-red-600 text-center">
+                  Límite de retiros alcanzado ({withdrawalLimit.pending_count}/5)
                 </p>
               )}
             </form>

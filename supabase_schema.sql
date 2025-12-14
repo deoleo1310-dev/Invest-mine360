@@ -1,4 +1,4 @@
-/// tablas y columnas
+// tablas y columnas
 
 table_name,column_name,data_type,is_nullable,column_default
 daily_earnings,id,uuid,NO,gen_random_uuid()
@@ -24,7 +24,6 @@ investments,id,uuid,NO,gen_random_uuid()
 investments,user_id,uuid,NO,null
 investments,inversion_actual,numeric,NO,0
 investments,tasa_diaria,numeric,NO,0
-investments,ganancia_acumulada,numeric,NO,0
 investments,last_week_generated,date,YES,null
 investments,created_at,timestamp with time zone,NO,now()
 investments,updated_at,timestamp with time zone,NO,now()
@@ -44,28 +43,13 @@ withdrawals,fecha_procesado,timestamp with time zone,YES,null
 withdrawals,created_at,timestamp with time zone,NO,now()
 withdrawals,comentario_rechazo,text,YES,null
 
-// triggers
-table_name,trigger_name,event,action_timing,action_statement
-investments,investment_history_trigger,INSERT,AFTER,EXECUTE FUNCTION log_investment_change()
-investments,investment_history_trigger,UPDATE,AFTER,EXECUTE FUNCTION log_investment_change()
-investments,on_investment_created,INSERT,BEFORE,EXECUTE FUNCTION initialize_investment()
-
-/// triggers mas funcion asociada
-trigger_name,trigger_definition
-update_objects_updated_at,CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()
-prefixes_create_hierarchy,CREATE TRIGGER prefixes_create_hierarchy BEFORE INSERT ON storage.prefixes FOR EACH ROW WHEN (pg_trigger_depth() < 1) EXECUTE FUNCTION storage.prefixes_insert_trigger()
-enforce_bucket_name_length_trigger,CREATE TRIGGER enforce_bucket_name_length_trigger BEFORE INSERT OR UPDATE OF name ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_name_length()
-objects_insert_create_prefix,CREATE TRIGGER objects_insert_create_prefix BEFORE INSERT ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.objects_insert_prefix_trigger()
-objects_delete_delete_prefix,CREATE TRIGGER objects_delete_delete_prefix AFTER DELETE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.delete_prefix_hierarchy_trigger()
-objects_update_create_prefix,CREATE TRIGGER objects_update_create_prefix BEFORE UPDATE ON storage.objects FOR EACH ROW WHEN (new.name <> old.name OR new.bucket_id <> old.bucket_id) EXECUTE FUNCTION storage.objects_update_prefix_trigger()
-prefixes_delete_hierarchy,CREATE TRIGGER prefixes_delete_hierarchy AFTER DELETE ON storage.prefixes FOR EACH ROW EXECUTE FUNCTION storage.delete_prefix_hierarchy_trigger()
-tr_check_filters,CREATE TRIGGER tr_check_filters BEFORE INSERT OR UPDATE ON realtime.subscription FOR EACH ROW EXECUTE FUNCTION realtime.subscription_check_filters()
-on_auth_user_created,CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user()
-on_investment_created,CREATE TRIGGER on_investment_created BEFORE INSERT ON investments FOR EACH ROW EXECUTE FUNCTION initialize_investment()
-investment_history_trigger,CREATE TRIGGER investment_history_trigger AFTER INSERT OR UPDATE ON investments FOR EACH ROW EXECUTE FUNCTION log_investment_change()
-
 // policies
+
 schemaname,tablename,policyname,permissive,roles,command,using_expression,check_expression
+public,daily_earnings,Admins pueden ver todas las ganancias,PERMISSIVE,{public},SELECT,"(EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text))))",null
+public,daily_earnings,Usuarios pueden ver sus ganancias,PERMISSIVE,{public},SELECT,(auth.uid() = user_id),null
 public,daily_earnings,admin_or_own_select_earnings,PERMISSIVE,{public},SELECT,(is_admin() OR (auth.uid() = user_id)),null
 public,daily_earnings,system_insert_earnings,PERMISSIVE,{public},INSERT,null,(auth.uid() = user_id)
 public,daily_earnings_log,Solo admins pueden registrar generación,PERMISSIVE,{public},INSERT,null,"(EXISTS ( SELECT 1
@@ -85,12 +69,36 @@ public,withdrawals,admin_or_own_select_withdrawals,PERMISSIVE,{public},SELECT,(i
 public,withdrawals,admin_update_withdrawals,PERMISSIVE,{public},UPDATE,is_admin(),null
 public,withdrawals,user_insert_withdrawals,PERMISSIVE,{public},INSERT,null,(auth.uid() = user_id)
 
-// indices
+// triggers
+table_name,trigger_name,event,action_timing,action_statement
+investments,investment_history_trigger,INSERT,AFTER,EXECUTE FUNCTION log_investment_change()
+investments,investment_history_trigger,UPDATE,AFTER,EXECUTE FUNCTION log_investment_change()
+investments,on_investment_created,INSERT,BEFORE,EXECUTE FUNCTION initialize_investment()
+withdrawals,check_withdrawal_balance,UPDATE,BEFORE,EXECUTE FUNCTION validate_withdrawal_approval()
+withdrawals,limit_pending_withdrawals,INSERT,BEFORE,EXECUTE FUNCTION check_pending_withdrawals_limit()
+withdrawals,limit_pending_withdrawals,UPDATE,BEFORE,EXECUTE FUNCTION check_pending_withdrawals_limit()
+withdrawals,validate_withdrawal_amount,UPDATE,BEFORE,EXECUTE FUNCTION prevent_negative_withdrawals()
+withdrawals,validate_withdrawal_amount,INSERT,BEFORE,EXECUTE FUNCTION prevent_negative_withdrawals()
 
+// triggers mas funcion asociada
+
+table_name,trigger_name,event,action_timing,action_statement
+investments,investment_history_trigger,INSERT,AFTER,EXECUTE FUNCTION log_investment_change()
+investments,investment_history_trigger,UPDATE,AFTER,EXECUTE FUNCTION log_investment_change()
+investments,on_investment_created,INSERT,BEFORE,EXECUTE FUNCTION initialize_investment()
+withdrawals,check_withdrawal_balance,UPDATE,BEFORE,EXECUTE FUNCTION validate_withdrawal_approval()
+withdrawals,limit_pending_withdrawals,INSERT,BEFORE,EXECUTE FUNCTION check_pending_withdrawals_limit()
+withdrawals,limit_pending_withdrawals,UPDATE,BEFORE,EXECUTE FUNCTION check_pending_withdrawals_limit()
+withdrawals,validate_withdrawal_amount,UPDATE,BEFORE,EXECUTE FUNCTION prevent_negative_withdrawals()
+withdrawals,validate_withdrawal_amount,INSERT,BEFORE,EXECUTE FUNCTION prevent_negative_withdrawals()
+
+// indices
 table_name,index_name,index_definition,is_unique,is_primary
 daily_earnings,daily_earnings_pkey,CREATE UNIQUE INDEX daily_earnings_pkey ON public.daily_earnings USING btree (id),true,true
 daily_earnings,daily_earnings_user_id_date_key,"CREATE UNIQUE INDEX daily_earnings_user_id_date_key ON public.daily_earnings USING btree (user_id, date)",true,false
 daily_earnings,idx_daily_earnings_date,"CREATE INDEX idx_daily_earnings_date ON public.daily_earnings USING btree (date DESC) INCLUDE (user_id, earning_amount)",false,false
+daily_earnings,idx_daily_earnings_user_amount,CREATE INDEX idx_daily_earnings_user_amount ON public.daily_earnings USING btree (user_id) INCLUDE (earning_amount),false,false
+daily_earnings,idx_daily_earnings_user_date,"CREATE INDEX idx_daily_earnings_user_date ON public.daily_earnings USING btree (user_id, date DESC)",false,false
 daily_earnings,idx_daily_earnings_user_sum,CREATE INDEX idx_daily_earnings_user_sum ON public.daily_earnings USING btree (user_id) INCLUDE (earning_amount) WHERE (earning_amount > (0)::numeric),false,false
 daily_earnings_log,daily_earnings_log_generation_date_key,CREATE UNIQUE INDEX daily_earnings_log_generation_date_key ON public.daily_earnings_log USING btree (generation_date),true,false
 daily_earnings_log,daily_earnings_log_pkey,CREATE UNIQUE INDEX daily_earnings_log_pkey ON public.daily_earnings_log USING btree (id),true,true
@@ -113,8 +121,70 @@ withdrawals,idx_withdrawals_rechazado_comment,"CREATE INDEX idx_withdrawals_rech
 withdrawals,idx_withdrawals_user_estado,"CREATE INDEX idx_withdrawals_user_estado ON public.withdrawals USING btree (user_id, estado, fecha_solicitud DESC) INCLUDE (monto)",false,false
 withdrawals,withdrawals_pkey,CREATE UNIQUE INDEX withdrawals_pkey ON public.withdrawals USING btree (id),true,true
 
-// funciones
+// funciones sql y rpc
+
 function_name,schema,definition
+can_user_request_withdrawal,public,"CREATE OR REPLACE FUNCTION public.can_user_request_withdrawal(p_user_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  v_pending_count INTEGER;
+  v_can_request BOOLEAN;
+BEGIN
+  -- Contar retiros pendientes
+  SELECT COUNT(*)
+  INTO v_pending_count
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pendiente';
+  
+  -- Verificar si puede solicitar
+  v_can_request := v_pending_count < 5;
+  
+  RETURN jsonb_build_object(
+    'can_request', v_can_request,
+    'pending_count', v_pending_count,
+    'remaining_slots', GREATEST(0, 5 - v_pending_count),
+    'message', CASE 
+      WHEN v_can_request THEN 'Puedes solicitar un retiro'
+      ELSE 'Límite alcanzado: tienes ' || v_pending_count || ' retiros pendientes'
+    END
+  );
+END;
+$function$
+"
+check_pending_withdrawals_limit,public,"CREATE OR REPLACE FUNCTION public.check_pending_withdrawals_limit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_pending_count INTEGER;
+BEGIN
+  -- Solo validar cuando se inserta o se cambia a ""pendiente""
+  IF (TG_OP = 'INSERT' AND NEW.estado = 'pendiente') OR
+     (TG_OP = 'UPDATE' AND NEW.estado = 'pendiente' AND OLD.estado != 'pendiente') THEN
+    
+    -- Contar retiros pendientes actuales (excluyendo el actual si es UPDATE)
+    SELECT COUNT(*)
+    INTO v_pending_count
+    FROM withdrawals
+    WHERE user_id = NEW.user_id
+      AND estado = 'pendiente'
+      AND id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid);
+    
+    -- Si ya tiene 5 o más, rechazar
+    IF v_pending_count >= 5 THEN
+      RAISE EXCEPTION 'Límite alcanzado: Ya tienes % retiros pendientes. Espera a que se procesen antes de solicitar otro.', v_pending_count
+      USING HINT = 'Contacta al administrador si necesitas más información';
+    END IF;
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+"
 generate_daily_earnings_manual,public,"CREATE OR REPLACE FUNCTION public.generate_daily_earnings_manual()
  RETURNS json
  LANGUAGE plpgsql
@@ -197,7 +267,7 @@ END;
 $function$
 "
 get_all_clients_with_investments,public,"CREATE OR REPLACE FUNCTION public.get_all_clients_with_investments()
- RETURNS TABLE(user_id uuid, full_name text, email text, investment_id uuid, investment_amount numeric, daily_rate numeric, pendiente numeric, total_earnings numeric, days_count integer)
+ RETURNS TABLE(user_id uuid, full_name text, email text, investment_id uuid, investment_amount numeric, daily_rate numeric, pendiente numeric, total_earnings numeric, days_generated integer)
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
 AS $function$
@@ -210,26 +280,97 @@ BEGIN
     i.id AS investment_id,
     COALESCE(i.inversion_actual, 0) AS investment_amount,
     COALESCE(i.tasa_diaria, 0) AS daily_rate,
-    COALESCE(i.pendiente, 0) AS pendiente,  -- ✅ NUEVO
-    COALESCE(
-      CASE 
-        WHEN i.inversion_actual > 0 AND i.tasa_diaria > 0 THEN
-          i.inversion_actual * (i.tasa_diaria / 100) * 
-          GREATEST(0, DATE_PART('day', AGE(CURRENT_DATE, i.created_at::DATE)))
-        ELSE 0
-      END, 0
-    )::NUMERIC AS total_earnings,
-    COALESCE(
-      CASE 
-        WHEN i.created_at IS NOT NULL THEN
-          GREATEST(0, DATE_PART('day', AGE(CURRENT_DATE, i.created_at::DATE)))::INTEGER
-        ELSE 0
-      END, 0
-    ) AS days_count
+    COALESCE(i.pendiente, 0) AS pendiente,
+    
+    -- ✅ CORREGIDO: Suma ganancias REALES generadas
+    COALESCE((
+      SELECT SUM(de.earning_amount)
+      FROM daily_earnings de
+      WHERE de.user_id = p.id
+    ), 0)::NUMERIC AS total_earnings,
+    
+    -- ✅ NUEVO: Cuenta días generados
+    COALESCE((
+      SELECT COUNT(DISTINCT de.date)::INTEGER
+      FROM daily_earnings de
+      WHERE de.user_id = p.id
+    ), 0) AS days_generated
+    
   FROM profiles p
   LEFT JOIN investments i ON i.user_id = p.id
   WHERE p.role = 'cliente'
   ORDER BY p.created_at DESC;
+END;
+$function$
+"
+get_available_balance_for_admin,public,"CREATE OR REPLACE FUNCTION public.get_available_balance_for_admin(p_user_id uuid, p_withdrawal_id uuid DEFAULT NULL::uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  v_total_earned numeric;
+  v_total_withdrawn numeric;
+  v_pending_withdrawn numeric;
+BEGIN
+  -- Ganancias generadas
+  SELECT COALESCE(SUM(earning_amount), 0)
+  INTO v_total_earned
+  FROM daily_earnings
+  WHERE user_id = p_user_id;
+  
+  -- Retiros pagados
+  SELECT COALESCE(SUM(monto), 0)
+  INTO v_total_withdrawn
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pagado';
+  
+  -- Retiros pendientes (excluyendo el que se está evaluando)
+  SELECT COALESCE(SUM(monto), 0)
+  INTO v_pending_withdrawn
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pendiente'
+    AND id != COALESCE(p_withdrawal_id, '00000000-0000-0000-0000-000000000000'::uuid);
+  
+  -- Balance = Generado - Pagado - (Pendientes excepto el actual)
+  RETURN GREATEST(0, v_total_earned - v_total_withdrawn - v_pending_withdrawn);
+END;
+$function$
+"
+get_available_balance_for_client,public,"CREATE OR REPLACE FUNCTION public.get_available_balance_for_client(p_user_id uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  v_total_earned numeric;
+  v_total_withdrawn numeric;
+  v_pending_withdrawn numeric;
+BEGIN
+  -- Ganancias generadas
+  SELECT COALESCE(SUM(earning_amount), 0)
+  INTO v_total_earned
+  FROM daily_earnings
+  WHERE user_id = p_user_id;
+  
+  -- Retiros pagados
+  SELECT COALESCE(SUM(monto), 0)
+  INTO v_total_withdrawn
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pagado';
+  
+  -- Retiros pendientes
+  SELECT COALESCE(SUM(monto), 0)
+  INTO v_pending_withdrawn
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pendiente';
+  
+  -- Balance = Generado - Pagado - Pendientes
+  RETURN GREATEST(0, v_total_earned - v_total_withdrawn - v_pending_withdrawn);
 END;
 $function$
 "
@@ -246,20 +387,19 @@ DECLARE
   v_pending_withdrawn numeric;
   v_available_balance numeric;
 BEGIN
-  -- Obtener inversión activa (INCLUYENDO pendiente)
+  -- Obtener inversión activa
   SELECT 
     id,
     user_id,
     inversion_actual,
     tasa_diaria,
-    pendiente,  -- ✅ AGREGADO
+    pendiente,
     created_at
   INTO v_investment
   FROM investments
   WHERE user_id = p_user_id
   LIMIT 1;
 
-  -- Si no tiene inversión, retornar null
   IF v_investment.id IS NULL THEN
     RETURN jsonb_build_object(
       'investment', NULL,
@@ -269,14 +409,11 @@ BEGIN
     );
   END IF;
 
-  -- Calcular ganancias totales
-  v_total_earned := CASE 
-    WHEN v_investment.inversion_actual > 0 AND v_investment.tasa_diaria > 0 THEN
-      (v_investment.inversion_actual * (v_investment.tasa_diaria / 100) * 
-       GREATEST(0, DATE_PART('day', AGE(CURRENT_DATE, v_investment.created_at::DATE))))::numeric
-    ELSE 
-      0::numeric
-  END;
+  -- ✅ Calcular ganancias REALES
+  SELECT COALESCE(SUM(earning_amount), 0)
+  INTO v_total_earned
+  FROM daily_earnings
+  WHERE user_id = p_user_id;
 
   -- Obtener retiros con comentarios
   SELECT jsonb_agg(
@@ -300,17 +437,16 @@ BEGIN
   FROM withdrawals
   WHERE user_id = p_user_id;
 
-  -- Calcular balance disponible
-  v_available_balance := GREATEST(0, v_total_earned - v_total_withdrawn - v_pending_withdrawn)::numeric;
+  -- ✅ USAR la función específica para CLIENTE
+  v_available_balance := get_available_balance_for_client(p_user_id);
 
-  -- Retornar todo en un objeto JSON (INCLUYENDO pendiente)
   RETURN jsonb_build_object(
     'investment', jsonb_build_object(
       'id', v_investment.id,
       'user_id', v_investment.user_id,
       'inversion_actual', v_investment.inversion_actual,
       'tasa_diaria', v_investment.tasa_diaria,
-      'pendiente', COALESCE(v_investment.pendiente, 0),  -- ✅ AGREGADO
+      'pendiente', COALESCE(v_investment.pendiente, 0),
       'created_at', v_investment.created_at
     ),
     'withdrawals', COALESCE(v_withdrawals, '[]'::jsonb),
@@ -327,26 +463,6 @@ get_withdrawals_with_balances,public,"CREATE OR REPLACE FUNCTION public.get_with
 AS $function$
 BEGIN
     RETURN QUERY
-    WITH user_earnings AS (
-        SELECT 
-            i.user_id AS uid,
-            CASE 
-                WHEN i.inversion_actual > 0 AND i.tasa_diaria > 0 THEN
-                    (i.inversion_actual * (i.tasa_diaria / 100) * 
-                    GREATEST(0, DATE_PART('day', AGE(CURRENT_DATE, i.created_at::DATE))))::numeric
-                ELSE 
-                    0::numeric
-            END AS total_earned
-        FROM investments i
-    ),
-    user_withdrawals AS (
-        SELECT 
-            wd.user_id AS uid,
-            COALESCE(SUM(wd.monto), 0)::numeric AS total_withdrawn
-        FROM withdrawals wd
-        WHERE wd.estado IN ('pagado', 'pendiente')
-        GROUP BY wd.user_id
-    )
     SELECT 
         w.id AS withdrawal_id,
         w.user_id,
@@ -356,19 +472,10 @@ BEGIN
         w.estado,
         w.fecha_solicitud,
         w.comentario_rechazo,
-        GREATEST(
-            0::numeric, 
-            (COALESCE(ue.total_earned, 0) - 
-             COALESCE(uw.total_withdrawn, 0) + 
-             CASE 
-                WHEN w.estado = 'pendiente' THEN w.monto 
-                ELSE 0 
-             END)::numeric
-        ) AS available_balance
+        -- ✅ USAR la función específica para ADMIN (excluye el retiro actual)
+        get_available_balance_for_admin(w.user_id, w.id) AS available_balance
     FROM withdrawals w
     INNER JOIN profiles p ON p.id = w.user_id
-    LEFT JOIN user_earnings ue ON ue.uid = w.user_id
-    LEFT JOIN user_withdrawals uw ON uw.uid = w.user_id
     ORDER BY w.fecha_solicitud DESC;
 END;
 $function$
@@ -440,10 +547,142 @@ BEGIN
 END;
 $function$
 "
+prevent_negative_withdrawals,public,"CREATE OR REPLACE FUNCTION public.prevent_negative_withdrawals()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.monto <= 0 THEN
+    RAISE EXCEPTION 'El monto del retiro debe ser mayor a $0';
+  END IF;
+  
+  IF NEW.monto < 50 THEN
+    RAISE EXCEPTION 'El retiro mínimo es de $50';
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+"
+validate_withdrawal_approval,public,"CREATE OR REPLACE FUNCTION public.validate_withdrawal_approval()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_available_balance numeric;
+BEGIN
+  -- Prevenir cambios en retiros ya pagados
+  IF OLD.estado = 'pagado' AND NEW.estado != 'pagado' THEN
+    RAISE EXCEPTION 'No se puede modificar un retiro que ya fue pagado';
+  END IF;
+  
+  -- Validar monto positivo
+  IF NEW.monto <= 0 THEN
+    RAISE EXCEPTION 'El monto debe ser mayor a $0';
+  END IF;
+  
+  -- Validar monto mínimo
+  IF NEW.monto < 50 THEN
+    RAISE EXCEPTION 'El retiro mínimo es de $50';
+  END IF;
 
-// funciones rpc espuestas via API
+  -- Solo validar balance cuando se cambia a ""pagado""
+  IF NEW.estado = 'pagado' AND OLD.estado != 'pagado' THEN
+    
+    -- ✅ USAR la función específica para ADMIN
+    v_available_balance := get_available_balance_for_admin(NEW.user_id, NEW.id);
+    
+    -- Validar fondos suficientes
+    IF NEW.monto > v_available_balance THEN
+      RAISE EXCEPTION 
+        'FONDOS INSUFICIENTES: Disponible=$%, Solicitado=$%, Faltante=$%', 
+        v_available_balance, 
+        NEW.monto,
+        NEW.monto - v_available_balance
+      USING HINT = 'El usuario no tiene suficiente balance para este retiro';
+    END IF;
+    
+    NEW.fecha_procesado := NOW();
+  END IF;
+  
+  -- Si se rechaza, registrar timestamp
+  IF NEW.estado = 'rechazado' AND OLD.estado != 'rechazado' THEN
+    NEW.fecha_procesado := NOW();
+    
+    IF NEW.comentario_rechazo IS NULL OR trim(NEW.comentario_rechazo) = '' THEN
+      RAISE EXCEPTION 'Debe proporcionar un motivo de rechazo';
+    END IF;
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+"
+
+// funciones rpc expuestas via API
 
 rpc_name,definition
+can_user_request_withdrawal,"CREATE OR REPLACE FUNCTION public.can_user_request_withdrawal(p_user_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  v_pending_count INTEGER;
+  v_can_request BOOLEAN;
+BEGIN
+  -- Contar retiros pendientes
+  SELECT COUNT(*)
+  INTO v_pending_count
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pendiente';
+  
+  -- Verificar si puede solicitar
+  v_can_request := v_pending_count < 5;
+  
+  RETURN jsonb_build_object(
+    'can_request', v_can_request,
+    'pending_count', v_pending_count,
+    'remaining_slots', GREATEST(0, 5 - v_pending_count),
+    'message', CASE 
+      WHEN v_can_request THEN 'Puedes solicitar un retiro'
+      ELSE 'Límite alcanzado: tienes ' || v_pending_count || ' retiros pendientes'
+    END
+  );
+END;
+$function$
+"
+check_pending_withdrawals_limit,"CREATE OR REPLACE FUNCTION public.check_pending_withdrawals_limit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_pending_count INTEGER;
+BEGIN
+  -- Solo validar cuando se inserta o se cambia a ""pendiente""
+  IF (TG_OP = 'INSERT' AND NEW.estado = 'pendiente') OR
+     (TG_OP = 'UPDATE' AND NEW.estado = 'pendiente' AND OLD.estado != 'pendiente') THEN
+    
+    -- Contar retiros pendientes actuales (excluyendo el actual si es UPDATE)
+    SELECT COUNT(*)
+    INTO v_pending_count
+    FROM withdrawals
+    WHERE user_id = NEW.user_id
+      AND estado = 'pendiente'
+      AND id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid);
+    
+    -- Si ya tiene 5 o más, rechazar
+    IF v_pending_count >= 5 THEN
+      RAISE EXCEPTION 'Límite alcanzado: Ya tienes % retiros pendientes. Espera a que se procesen antes de solicitar otro.', v_pending_count
+      USING HINT = 'Contacta al administrador si necesitas más información';
+    END IF;
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+"
 generate_daily_earnings_manual,"CREATE OR REPLACE FUNCTION public.generate_daily_earnings_manual()
  RETURNS json
  LANGUAGE plpgsql
@@ -526,7 +765,7 @@ END;
 $function$
 "
 get_all_clients_with_investments,"CREATE OR REPLACE FUNCTION public.get_all_clients_with_investments()
- RETURNS TABLE(user_id uuid, full_name text, email text, investment_id uuid, investment_amount numeric, daily_rate numeric, pendiente numeric, total_earnings numeric, days_count integer)
+ RETURNS TABLE(user_id uuid, full_name text, email text, investment_id uuid, investment_amount numeric, daily_rate numeric, pendiente numeric, total_earnings numeric, days_generated integer)
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
 AS $function$
@@ -539,26 +778,97 @@ BEGIN
     i.id AS investment_id,
     COALESCE(i.inversion_actual, 0) AS investment_amount,
     COALESCE(i.tasa_diaria, 0) AS daily_rate,
-    COALESCE(i.pendiente, 0) AS pendiente,  -- ✅ NUEVO
-    COALESCE(
-      CASE 
-        WHEN i.inversion_actual > 0 AND i.tasa_diaria > 0 THEN
-          i.inversion_actual * (i.tasa_diaria / 100) * 
-          GREATEST(0, DATE_PART('day', AGE(CURRENT_DATE, i.created_at::DATE)))
-        ELSE 0
-      END, 0
-    )::NUMERIC AS total_earnings,
-    COALESCE(
-      CASE 
-        WHEN i.created_at IS NOT NULL THEN
-          GREATEST(0, DATE_PART('day', AGE(CURRENT_DATE, i.created_at::DATE)))::INTEGER
-        ELSE 0
-      END, 0
-    ) AS days_count
+    COALESCE(i.pendiente, 0) AS pendiente,
+    
+    -- ✅ CORREGIDO: Suma ganancias REALES generadas
+    COALESCE((
+      SELECT SUM(de.earning_amount)
+      FROM daily_earnings de
+      WHERE de.user_id = p.id
+    ), 0)::NUMERIC AS total_earnings,
+    
+    -- ✅ NUEVO: Cuenta días generados
+    COALESCE((
+      SELECT COUNT(DISTINCT de.date)::INTEGER
+      FROM daily_earnings de
+      WHERE de.user_id = p.id
+    ), 0) AS days_generated
+    
   FROM profiles p
   LEFT JOIN investments i ON i.user_id = p.id
   WHERE p.role = 'cliente'
   ORDER BY p.created_at DESC;
+END;
+$function$
+"
+get_available_balance_for_admin,"CREATE OR REPLACE FUNCTION public.get_available_balance_for_admin(p_user_id uuid, p_withdrawal_id uuid DEFAULT NULL::uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  v_total_earned numeric;
+  v_total_withdrawn numeric;
+  v_pending_withdrawn numeric;
+BEGIN
+  -- Ganancias generadas
+  SELECT COALESCE(SUM(earning_amount), 0)
+  INTO v_total_earned
+  FROM daily_earnings
+  WHERE user_id = p_user_id;
+  
+  -- Retiros pagados
+  SELECT COALESCE(SUM(monto), 0)
+  INTO v_total_withdrawn
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pagado';
+  
+  -- Retiros pendientes (excluyendo el que se está evaluando)
+  SELECT COALESCE(SUM(monto), 0)
+  INTO v_pending_withdrawn
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pendiente'
+    AND id != COALESCE(p_withdrawal_id, '00000000-0000-0000-0000-000000000000'::uuid);
+  
+  -- Balance = Generado - Pagado - (Pendientes excepto el actual)
+  RETURN GREATEST(0, v_total_earned - v_total_withdrawn - v_pending_withdrawn);
+END;
+$function$
+"
+get_available_balance_for_client,"CREATE OR REPLACE FUNCTION public.get_available_balance_for_client(p_user_id uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  v_total_earned numeric;
+  v_total_withdrawn numeric;
+  v_pending_withdrawn numeric;
+BEGIN
+  -- Ganancias generadas
+  SELECT COALESCE(SUM(earning_amount), 0)
+  INTO v_total_earned
+  FROM daily_earnings
+  WHERE user_id = p_user_id;
+  
+  -- Retiros pagados
+  SELECT COALESCE(SUM(monto), 0)
+  INTO v_total_withdrawn
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pagado';
+  
+  -- Retiros pendientes
+  SELECT COALESCE(SUM(monto), 0)
+  INTO v_pending_withdrawn
+  FROM withdrawals
+  WHERE user_id = p_user_id
+    AND estado = 'pendiente';
+  
+  -- Balance = Generado - Pagado - Pendientes
+  RETURN GREATEST(0, v_total_earned - v_total_withdrawn - v_pending_withdrawn);
 END;
 $function$
 "
@@ -575,20 +885,19 @@ DECLARE
   v_pending_withdrawn numeric;
   v_available_balance numeric;
 BEGIN
-  -- Obtener inversión activa (INCLUYENDO pendiente)
+  -- Obtener inversión activa
   SELECT 
     id,
     user_id,
     inversion_actual,
     tasa_diaria,
-    pendiente,  -- ✅ AGREGADO
+    pendiente,
     created_at
   INTO v_investment
   FROM investments
   WHERE user_id = p_user_id
   LIMIT 1;
 
-  -- Si no tiene inversión, retornar null
   IF v_investment.id IS NULL THEN
     RETURN jsonb_build_object(
       'investment', NULL,
@@ -598,14 +907,11 @@ BEGIN
     );
   END IF;
 
-  -- Calcular ganancias totales
-  v_total_earned := CASE 
-    WHEN v_investment.inversion_actual > 0 AND v_investment.tasa_diaria > 0 THEN
-      (v_investment.inversion_actual * (v_investment.tasa_diaria / 100) * 
-       GREATEST(0, DATE_PART('day', AGE(CURRENT_DATE, v_investment.created_at::DATE))))::numeric
-    ELSE 
-      0::numeric
-  END;
+  -- ✅ Calcular ganancias REALES
+  SELECT COALESCE(SUM(earning_amount), 0)
+  INTO v_total_earned
+  FROM daily_earnings
+  WHERE user_id = p_user_id;
 
   -- Obtener retiros con comentarios
   SELECT jsonb_agg(
@@ -629,17 +935,16 @@ BEGIN
   FROM withdrawals
   WHERE user_id = p_user_id;
 
-  -- Calcular balance disponible
-  v_available_balance := GREATEST(0, v_total_earned - v_total_withdrawn - v_pending_withdrawn)::numeric;
+  -- ✅ USAR la función específica para CLIENTE
+  v_available_balance := get_available_balance_for_client(p_user_id);
 
-  -- Retornar todo en un objeto JSON (INCLUYENDO pendiente)
   RETURN jsonb_build_object(
     'investment', jsonb_build_object(
       'id', v_investment.id,
       'user_id', v_investment.user_id,
       'inversion_actual', v_investment.inversion_actual,
       'tasa_diaria', v_investment.tasa_diaria,
-      'pendiente', COALESCE(v_investment.pendiente, 0),  -- ✅ AGREGADO
+      'pendiente', COALESCE(v_investment.pendiente, 0),
       'created_at', v_investment.created_at
     ),
     'withdrawals', COALESCE(v_withdrawals, '[]'::jsonb),
@@ -656,26 +961,6 @@ get_withdrawals_with_balances,"CREATE OR REPLACE FUNCTION public.get_withdrawals
 AS $function$
 BEGIN
     RETURN QUERY
-    WITH user_earnings AS (
-        SELECT 
-            i.user_id AS uid,
-            CASE 
-                WHEN i.inversion_actual > 0 AND i.tasa_diaria > 0 THEN
-                    (i.inversion_actual * (i.tasa_diaria / 100) * 
-                    GREATEST(0, DATE_PART('day', AGE(CURRENT_DATE, i.created_at::DATE))))::numeric
-                ELSE 
-                    0::numeric
-            END AS total_earned
-        FROM investments i
-    ),
-    user_withdrawals AS (
-        SELECT 
-            wd.user_id AS uid,
-            COALESCE(SUM(wd.monto), 0)::numeric AS total_withdrawn
-        FROM withdrawals wd
-        WHERE wd.estado IN ('pagado', 'pendiente')
-        GROUP BY wd.user_id
-    )
     SELECT 
         w.id AS withdrawal_id,
         w.user_id,
@@ -685,19 +970,10 @@ BEGIN
         w.estado,
         w.fecha_solicitud,
         w.comentario_rechazo,
-        GREATEST(
-            0::numeric, 
-            (COALESCE(ue.total_earned, 0) - 
-             COALESCE(uw.total_withdrawn, 0) + 
-             CASE 
-                WHEN w.estado = 'pendiente' THEN w.monto 
-                ELSE 0 
-             END)::numeric
-        ) AS available_balance
+        -- ✅ USAR la función específica para ADMIN (excluye el retiro actual)
+        get_available_balance_for_admin(w.user_id, w.id) AS available_balance
     FROM withdrawals w
     INNER JOIN profiles p ON p.id = w.user_id
-    LEFT JOIN user_earnings ue ON ue.uid = w.user_id
-    LEFT JOIN user_withdrawals uw ON uw.uid = w.user_id
     ORDER BY w.fecha_solicitud DESC;
 END;
 $function$
@@ -765,6 +1041,77 @@ BEGIN
       amount = EXCLUDED.amount,
       daily_rate = EXCLUDED.daily_rate;
   END IF;
+  RETURN NEW;
+END;
+$function$
+"
+prevent_negative_withdrawals,"CREATE OR REPLACE FUNCTION public.prevent_negative_withdrawals()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.monto <= 0 THEN
+    RAISE EXCEPTION 'El monto del retiro debe ser mayor a $0';
+  END IF;
+  
+  IF NEW.monto < 50 THEN
+    RAISE EXCEPTION 'El retiro mínimo es de $50';
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$
+"
+validate_withdrawal_approval,"CREATE OR REPLACE FUNCTION public.validate_withdrawal_approval()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_available_balance numeric;
+BEGIN
+  -- Prevenir cambios en retiros ya pagados
+  IF OLD.estado = 'pagado' AND NEW.estado != 'pagado' THEN
+    RAISE EXCEPTION 'No se puede modificar un retiro que ya fue pagado';
+  END IF;
+  
+  -- Validar monto positivo
+  IF NEW.monto <= 0 THEN
+    RAISE EXCEPTION 'El monto debe ser mayor a $0';
+  END IF;
+  
+  -- Validar monto mínimo
+  IF NEW.monto < 50 THEN
+    RAISE EXCEPTION 'El retiro mínimo es de $50';
+  END IF;
+
+  -- Solo validar balance cuando se cambia a ""pagado""
+  IF NEW.estado = 'pagado' AND OLD.estado != 'pagado' THEN
+    
+    -- ✅ USAR la función específica para ADMIN
+    v_available_balance := get_available_balance_for_admin(NEW.user_id, NEW.id);
+    
+    -- Validar fondos suficientes
+    IF NEW.monto > v_available_balance THEN
+      RAISE EXCEPTION 
+        'FONDOS INSUFICIENTES: Disponible=$%, Solicitado=$%, Faltante=$%', 
+        v_available_balance, 
+        NEW.monto,
+        NEW.monto - v_available_balance
+      USING HINT = 'El usuario no tiene suficiente balance para este retiro';
+    END IF;
+    
+    NEW.fecha_procesado := NOW();
+  END IF;
+  
+  -- Si se rechaza, registrar timestamp
+  IF NEW.estado = 'rechazado' AND OLD.estado != 'rechazado' THEN
+    NEW.fecha_procesado := NOW();
+    
+    IF NEW.comentario_rechazo IS NULL OR trim(NEW.comentario_rechazo) = '' THEN
+      RAISE EXCEPTION 'Debe proporcionar un motivo de rechazo';
+    END IF;
+  END IF;
+  
   RETURN NEW;
 END;
 $function$

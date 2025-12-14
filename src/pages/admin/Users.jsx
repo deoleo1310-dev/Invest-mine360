@@ -6,7 +6,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
-import { Plus, Pencil, TrendingUp, Loader2, Eye, EyeOff, Lock, AlertCircle, Trash2, Zap } from 'lucide-react';
+import { Plus, Pencil, TrendingUp, Loader2, Eye, EyeOff, Lock, AlertCircle, Trash2, Zap, Calendar } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
 export default function AdminUsers() {
@@ -41,6 +41,7 @@ export default function AdminUsers() {
 
       if (error) throw error;
       
+      // ✅ CORREGIDO: Ahora usamos datos reales de daily_earnings
       const usersWithEarnings = data.map(user => ({
         ...user,
         id: user.user_id,
@@ -49,8 +50,8 @@ export default function AdminUsers() {
           tasa_diaria: user.daily_rate,
           pendiente: user.pendiente || 0
         } : null,
-        totalEarnings: user.total_earnings,
-        daysCount: user.days_count,
+        totalEarnings: user.total_earnings,      // ✅ Ganancias REALES
+        daysGenerated: user.days_generated,      // ✅ Días generados
         dailyRate: user.daily_rate,
         pendiente: user.pendiente || 0
       }));
@@ -67,7 +68,6 @@ export default function AdminUsers() {
     loadUsers();
   }, []);
 
-  // ✅ NUEVA FUNCIÓN: Generar Ganancias Diarias
   const handleGenerateEarnings = async () => {
     if (!confirm('¿Generar las ganancias del día para TODOS los usuarios?\n\nEsta acción solo puede hacerse UNA VEZ por día.')) {
       return;
@@ -98,7 +98,6 @@ export default function AdminUsers() {
         })}`
       );
 
-      // Recargar usuarios para ver los cambios
       loadUsers();
 
     } catch (error) {
@@ -136,18 +135,18 @@ export default function AdminUsers() {
     }
     setIsModalOpen(true);
   };
-const handleDeleteUser = async (userId, userName) => {
-    if (!confirm(`¿Estás seguro de eliminar a ${userName}?\n\nEsta acción NO se puede deshacer y eliminará:\n- Su cuenta de autenticación\n- Su perfil\n- Su inversión\n- Todos sus retiros\n\n¿Continuar?`)) {
+
+  const handleDeleteUser = async (userId, userName) => {
+    if (!confirm(`¿Estás seguro de eliminar a ${userName}?\n\nEsta acción NO se puede deshacer y eliminará:\n- Su perfil\n- Su inversión\n- Todos sus retiros\n- Todas sus ganancias generadas\n\n¿Continuar?`)) {
       return;
     }
 
     setDeletingUserId(userId);
 
     try {
-      // 1. Eliminar retiros
+      await supabase.from('daily_earnings').delete().eq('user_id', userId);
       await supabase.from('withdrawals').delete().eq('user_id', userId);
 
-      // 2. Eliminar historial de inversión
       const { data: inv } = await supabase
         .from('investments')
         .select('id')
@@ -156,44 +155,20 @@ const handleDeleteUser = async (userId, userName) => {
 
       if (inv) {
         await supabase.from('investment_history').delete().eq('investment_id', inv.id);
-        await supabase.from('daily_earnings').delete().eq('investment_id', inv.id);
       }
 
-      // 3. Eliminar inversión
       await supabase.from('investments').delete().eq('user_id', userId);
 
-      // 4. Eliminar perfil (profiles tiene ON DELETE CASCADE a auth.users)
-      await supabase.from('profiles').delete().eq('id', userId);
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
 
-      // 5. ✅ LLAMAR A LA EDGE FUNCTION PARA ELIMINAR DE AUTH.USERS
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('No hay sesión activa');
-      }
+      if (profileError) throw profileError;
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ userId })
-        }
-      );
-
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || 'Error al eliminar usuario de auth');
-      }
-
-      showSuccess(`✅ Usuario ${userName} eliminado completamente`);
+      showSuccess(`Usuario ${userName} eliminado exitosamente`);
       loadUsers();
     } catch (error) {
-      console.error('Delete error:', error);
       showError('Error al eliminar: ' + error.message);
     } finally {
       setDeletingUserId(null);
@@ -362,7 +337,6 @@ const handleDeleteUser = async (userId, userName) => {
             inversion_actual: Number(formData.inversion_actual),
             tasa_diaria: Number(formData.tasa_diaria),
             pendiente: Number(formData.pendiente || 0),
-            ganancia_acumulada: 0,
             created_at: new Date().toISOString()
           });
 
@@ -386,7 +360,6 @@ const handleDeleteUser = async (userId, userName) => {
         <h2 className="text-2xl font-bold text-primary-dark">Gestión de Usuarios</h2>
         
         <div className="flex gap-2">
-          {/* ✅ BOTÓN GENERAR GANANCIAS */}
           <Button 
             onClick={handleGenerateEarnings}
             disabled={generatingEarnings}
@@ -458,7 +431,6 @@ const handleDeleteUser = async (userId, userName) => {
                   <Badge variant="success">
                     Tasa: {user.daily_rate || 0}% diaria
                   </Badge>
-                  {/* ✅ BADGE FALTANTE */}
                   {user.pendiente > 0 && (
                     <Badge variant="warning">
                       Faltante: ${Number(user.pendiente).toLocaleString()}
@@ -466,19 +438,27 @@ const handleDeleteUser = async (userId, userName) => {
                   )}
                 </div>
                 
-                <div className="flex items-center gap-2 text-status-success font-medium bg-status-success/5 p-2 rounded-lg">
-                  <TrendingUp size={16} />
-                  <span>
-                    Ganancia acumulada: ${Number(user.totalEarnings || 0).toLocaleString('es-DO', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2
-                    })}
-                  </span>
-                  {user.daysCount > 0 && (
-                    <span className="text-xs text-neutral-gray ml-2">
-                      ({user.daysCount} días × {user.dailyRate}%)
+                {/* ✅ CORREGIDO: Ahora muestra datos REALES */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-status-success font-medium bg-status-success/5 p-2 rounded-lg">
+                    <TrendingUp size={16} />
+                    <span>
+                      Total generado: ${Number(user.totalEarnings || 0).toLocaleString('es-DO', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}
                     </span>
-                  )}
+                  </div>
+                  
+                  {/* ✅ NUEVO: Mostrar días generados */}
+                  <div className="flex items-center gap-2 text-xs text-neutral-gray bg-neutral-bg p-2 rounded-lg">
+                    <Calendar size={14} />
+                    <span>
+                      {user.daysGenerated > 0 
+                        ? `${user.daysGenerated} día${user.daysGenerated !== 1 ? 's' : ''} con ganancias generadas`
+                        : 'Sin ganancias generadas aún'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </Card>
@@ -599,7 +579,6 @@ const handleDeleteUser = async (userId, userName) => {
             />
           </div>
 
-          {/* ✅ CAMPO FALTANTE */}
           <Input 
             label="💳 Faltante ($)"
             type="number"

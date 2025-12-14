@@ -1,17 +1,14 @@
-// ✅ VERSIÓN CORREGIDA - AdminWithdrawals.jsx
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Check, X, Loader2, DollarSign, AlertTriangle } from 'lucide-react';
+import { Check, X, Loader2, DollarSign, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { RejectModal } from '../../components/ui/RejectModal';
 
-// ✅ CACHÉ OPTIMIZADO (5 minutos)
 class WithdrawalCache {
   constructor(ttl = 300000) {
     this.cache = null;
@@ -48,12 +45,10 @@ export default function AdminWithdrawals() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [withdrawalToReject, setWithdrawalToReject] = useState(null);
 
-  // ✅ CARGA OPTIMIZADA: 1 RPC en lugar de N queries
   const loadData = async (useCache = true) => {
     try {
       setLoading(true);
 
-      // ✅ Intentar usar caché primero
       if (useCache) {
         const cached = cache.get();
         if (cached) {
@@ -66,7 +61,6 @@ export default function AdminWithdrawals() {
 
       console.log('🔄 Cargando datos desde Supabase...');
 
-      // ✅ UNA SOLA LLAMADA RPC
       const { data, error } = await supabase
         .rpc('get_withdrawals_with_balances');
 
@@ -75,9 +69,6 @@ export default function AdminWithdrawals() {
         throw error;
       }
 
-      console.log('✅ Datos recibidos:', data);
-
-      // ✅ Transformar datos para UI (INCLUYE comentario_rechazo)
       const transformed = data.map(w => ({
         id: w.withdrawal_id,
         user_id: w.user_id,
@@ -85,15 +76,12 @@ export default function AdminWithdrawals() {
         estado: w.estado,
         fecha_solicitud: w.fecha_solicitud,
         available_balance: w.available_balance,
-        comentario: w.comentario_rechazo, // ✅ AGREGADO
+        comentario: w.comentario_rechazo,
         profiles: {
           full_name: w.user_name,
           email: w.user_email
         }
       }));
-
-      console.log('📊 Total retiros:', transformed.length);
-      console.log('⏳ Pendientes:', transformed.filter(w => w.estado === 'pendiente').length);
 
       cache.set(transformed);
       setWithdrawals(transformed);
@@ -108,7 +96,6 @@ export default function AdminWithdrawals() {
   useEffect(() => {
     loadData(true);
 
-    // ✅ Recargar cada 30 segundos para ver nuevos retiros
     const interval = setInterval(() => {
       console.log('🔄 Recarga automática...');
       loadData(false);
@@ -117,31 +104,85 @@ export default function AdminWithdrawals() {
     return () => clearInterval(interval);
   }, []);
 
-  // ✅ FUNCIÓN PARA ABRIR MODAL DE RECHAZO
   const handleRejectClick = (withdrawal) => {
     setWithdrawalToReject(withdrawal);
     setRejectModalOpen(true);
   };
 
-  // ✅ VALIDACIÓN SIN LLAMADAS ADICIONALES (usamos balance pre-calculado)
-  const handleApprove = async (withdrawal) => {
-    const available = Number(withdrawal.available_balance);
-    const requested = Number(withdrawal.monto);
+  // ✅ CORREGIDO: Obtener balance desde la vista admin (excluye el retiro actual)
+  const getLatestBalance = async (userId, withdrawalId) => {
+    try {
+      const { data, error } = await supabase
+        .rpc('get_available_balance_for_admin', { 
+          p_user_id: userId,
+          p_withdrawal_id: withdrawalId 
+        });
 
-    if (requested > available) {
-      showError(
-        `❌ FONDOS INSUFICIENTES\n\n` +
-        `Usuario: ${withdrawal.profiles?.full_name}\n` +
-        `Solicitado: $${requested.toFixed(2)}\n` +
-        `Disponible: $${available.toFixed(2)}\n` +
-        `Faltante: $${(requested - available).toFixed(2)}`
-      );
-      return;
+      if (error) throw error;
+
+      return {
+        availableBalance: data
+      };
+    } catch (error) {
+      console.error('Error getting balance:', error);
+      throw error;
     }
+  };
 
-    setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'approving' }));
+  // ✅ MEJORADO: Validación en tiempo real antes de aprobar
+  const handleApprove = async (withdrawal) => {
+    setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'checking' }));
 
     try {
+      // ✅ PASO 1: Obtener balance actualizado (excluyendo este retiro)
+      const latestBalance = await getLatestBalance(withdrawal.user_id, withdrawal.id);
+      const available = Number(latestBalance.availableBalance);
+      const requested = Number(withdrawal.monto);
+
+      console.log('💰 Balance actualizado:', {
+        available,
+        requested,
+        withdrawalId: withdrawal.id
+      });
+
+      // ✅ PASO 2: Validar con datos frescos
+      if (requested > available) {
+        showError(
+          `❌ FONDOS INSUFICIENTES\n\n` +
+          `Usuario: ${withdrawal.profiles?.full_name}\n` +
+          `Ganancias generadas: $${latestBalance.totalEarnings.toFixed(2)}\n` +
+          `Disponible actual: $${available.toFixed(2)}\n` +
+          `Solicitado: $${requested.toFixed(2)}\n` +
+          `Faltante: $${(requested - available).toFixed(2)}\n\n` +
+          `💡 Sugerencia: Genera más ganancias o rechaza el retiro`
+        );
+        setActionLoading(prev => {
+          const copy = { ...prev };
+          delete copy[withdrawal.id];
+          return copy;
+        });
+        return;
+      }
+
+      // ✅ PASO 3: Confirmar con el admin
+      const confirmMsg = 
+        `¿Aprobar retiro de $${requested.toFixed(2)}?\n\n` +
+        `Usuario: ${withdrawal.profiles?.full_name}\n` +
+        `Balance disponible: $${available.toFixed(2)}\n` +
+        `Nuevo balance: $${(available - requested).toFixed(2)}`;
+
+      if (!confirm(confirmMsg)) {
+        setActionLoading(prev => {
+          const copy = { ...prev };
+          delete copy[withdrawal.id];
+          return copy;
+        });
+        return;
+      }
+
+      // ✅ PASO 4: Aprobar (el trigger de BD hará la validación final)
+      setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'approving' }));
+
       const { error } = await supabase
         .from('withdrawals')
         .update({ 
@@ -150,9 +191,22 @@ export default function AdminWithdrawals() {
         })
         .eq('id', withdrawal.id);
 
-      if (error) throw error;
+      if (error) {
+        // ✅ Si el trigger rechazó, mostramos el error
+        if (error.message.includes('FONDOS INSUFICIENTES')) {
+          showError('⚠️ El retiro fue rechazado por fondos insuficientes (validación de BD)');
+        } else {
+          throw error;
+        }
+        return;
+      }
 
-      showSuccess(`✅ Pago de $${requested.toFixed(2)} aprobado`);
+      showSuccess(
+        `✅ Pago aprobado exitosamente\n\n` +
+        `Monto: $${requested.toFixed(2)}\n` +
+        `Usuario: ${withdrawal.profiles?.full_name}`
+      );
+      
       cache.invalidate();
       await loadData(false);
     } catch (error) {
@@ -202,13 +256,11 @@ export default function AdminWithdrawals() {
     }
   };
 
-  // ✅ FILTRADO EN MEMORIA (no en DB)
   const filteredWithdrawals = useMemo(() => {
     if (filter === 'todos') return withdrawals;
     return withdrawals.filter(w => w.estado === filter);
   }, [withdrawals, filter]);
 
-  // ✅ CONTADORES OPTIMIZADOS
   const counts = useMemo(() => ({
     pendiente: withdrawals.filter(w => w.estado === 'pendiente').length,
     pagado: withdrawals.filter(w => w.estado === 'pagado').length,
@@ -236,9 +288,20 @@ export default function AdminWithdrawals() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-primary-dark">Gestión de Retiros</h2>
 
-        <div className="flex items-center gap-2 text-sm text-neutral-gray bg-white px-3 py-2 rounded-lg shadow-sm">
-          <DollarSign size={16} />
-          <span>{counts.pendiente} pendientes</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => loadData(false)}
+            className="flex items-center gap-2 text-sm text-neutral-gray bg-white px-3 py-2 rounded-lg shadow-sm hover:bg-neutral-bg transition-colors"
+            title="Recargar datos"
+          >
+            <RefreshCw size={16} />
+            <span className="hidden sm:inline">Actualizar</span>
+          </button>
+          
+          <div className="flex items-center gap-2 text-sm text-neutral-gray bg-white px-3 py-2 rounded-lg shadow-sm">
+            <DollarSign size={16} />
+            <span>{counts.pendiente} pendientes</span>
+          </div>
         </div>
       </div>
 
@@ -267,14 +330,12 @@ export default function AdminWithdrawals() {
       ) : (
         <div className="space-y-4">
 
-          {/* NO HAY RETIROS FILTRADOS */}
           {filteredWithdrawals.length === 0 && (
             <Card className="text-center py-10">
               <p className="text-neutral-gray">No hay retiros en esta categoría</p>
             </Card>
           )}
 
-          {/* LISTA DE RETIROS */}
           {filteredWithdrawals.map((w) => (
             <Card 
               key={w.id} 
@@ -336,16 +397,18 @@ export default function AdminWithdrawals() {
                       className="p-2 rounded-full w-10 h-10" 
                       onClick={() => handleApprove(w)}
                       disabled={actionLoading[w.id]}
-                      title="Aprobar"
+                      title="Aprobar (validará balance en tiempo real)"
                     >
-                      {actionLoading[w.id] === "approving" ? (
+                      {actionLoading[w.id] === "checking" ? (
+                        <RefreshCw className="animate-spin" size={20} />
+                      ) : actionLoading[w.id] === "approving" ? (
                         <Loader2 className="animate-spin" size={20} />
                       ) : (
                         <Check size={20} />
                       )}
                     </Button>
 
-                    {/* RECHAZAR (CON MODAL) */}
+                    {/* RECHAZAR */}
                     <Button 
                       variant="danger" 
                       className="p-2 rounded-full w-10 h-10"
