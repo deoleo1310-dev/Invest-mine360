@@ -26,13 +26,22 @@ export const AuthProvider = ({ children }) => {
 
     const initSession = async () => {
       try {
-        // ✅ TIMEOUT DE 3 SEGUNDOS (suficiente para Vercel + Supabase)
-        sessionTimeout = setTimeout(() => {
-          if (mounted) {
-            console.warn('⏱️ Timeout de sesión. Continuando como invitado.');
-            setLoading(false);
-          }
-        }, 3000);
+        
+      // ✅ MEJOR: Aumentar timeout y mejorar ux, 10 segundos de seccion.
+sessionTimeout = setTimeout(() => {
+  if (mounted) {
+    console.warn('⏱️ Cargando sesión tomando más tiempo...');
+    // Mostrar mensaje pero NO cerrar sesión aún
+  }
+}, 5000);
+
+// Timeout definitivo a los 10 segundos
+const finalTimeout = setTimeout(() => {
+  if (mounted) {
+    setUser(null);
+    setLoading(false);
+  }
+}, 10000);
 
         // ✅ USAR getSession() en lugar de getUser() (más rápido)
         const { data: { session }, error } = await supabase.auth.getSession();

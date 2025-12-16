@@ -1,4 +1,7 @@
+// supabase/functions/admin-reset-password/index.ts
+
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
+import { checkRateLimit } from "../_shared/rate-limiter.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,7 +19,26 @@ serve(async (req) => {
       throw new Error('No authorization header')
     }
 
-    // Usar fetch directo a la Admin API
+    // Extraer token y verificar usuario
+    const token = authHeader.replace('Bearer ', '')
+    
+    // ✅ NUEVO: Verificar rate limit (10 cambios de contraseña por minuto máximo)
+    const rateLimit = checkRateLimit(token, 10, 60000)
+    
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Rate limit exceeded. Try again later.',
+          remaining: rateLimit.remaining
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 429, // Too Many Requests
+        }
+      )
+    }
+
     const { userId, newPassword } = await req.json()
 
     if (!userId || !newPassword) {
@@ -27,7 +49,7 @@ serve(async (req) => {
       throw new Error('Password must be at least 6 characters')
     }
 
-    // Llamada directa a Admin API usando service_role_key
+    // Llamada a Admin API
     const response = await fetch(
       `${Deno.env.get('SUPABASE_URL')}/auth/v1/admin/users/${userId}`,
       {
@@ -52,7 +74,10 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         message: 'Password updated successfully',
-        data 
+        data,
+        rate_limit: {
+          remaining: rateLimit.remaining
+        }
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
