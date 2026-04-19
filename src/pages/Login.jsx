@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { TrendingUp, Loader2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useSettingsStore } from '../store/settingsStore';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -11,6 +12,7 @@ export default function Login() {
   const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { showError } = useToast();
+  const appName = useSettingsStore(s => s.settings.app_name);
 
   // ✅ REDIRECCIÓN: Cuando el usuario se actualiza
   useEffect(() => {
@@ -59,7 +61,7 @@ export default function Login() {
         <div className="w-20 h-20 bg-primary rounded-3xl flex items-center justify-center text-white shadow-lg mx-auto mb-4">
           <TrendingUp size={40} strokeWidth={2.5} />
         </div>
-        <h1 className="text-3xl font-bold text-neutral-text mb-2">Mine360pr</h1>
+        <h1 className="text-3xl font-bold text-neutral-text mb-2">{appName}</h1>
         <p className="text-neutral-gray">Tu plataforma de inversiones</p>
       </div>
 
@@ -117,7 +119,7 @@ export default function Login() {
 
       {/* Footer */}
       <footer className="mt-8 text-neutral-gray text-sm">
-        © 2025 Mine360pr. Todos los derechos reservados.
+        © {new Date().getFullYear()} {appName}. Todos los derechos reservados.
       </footer>
     </div>
   );

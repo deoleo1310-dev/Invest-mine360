@@ -2,11 +2,13 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { LogOut, Users, DollarSign, TrendingUp, Settings } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useSettingsStore } from '../../store/settingsStore';
 
 export const Layout = ({ children }) => {
   const { user, logout, isAdmin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const appName = useSettingsStore(s => s.settings.app_name);
 
   const handleLogout = () => {
     logout();
@@ -42,7 +44,7 @@ export const Layout = ({ children }) => {
             <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center text-primary shadow-sm">
               <TrendingUp size={20} strokeWidth={2.5} />
             </div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Mine360pr</h1>
+            <h1 className="text-xl font-bold text-white tracking-tight">{appName}</h1>
           </div>
 
           {/* User Info & Logout */}

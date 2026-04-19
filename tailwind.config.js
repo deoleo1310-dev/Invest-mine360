@@ -8,8 +8,8 @@ export default {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#1464F4', // Azul Principal
-          dark: '#0A2A6E',    // Azul Oscuro
+          DEFAULT: 'var(--primary-color, #1464F4)', // Dinámico desde admin
+          dark: 'var(--secondary-color, #0A2A6E)',   // Dinámico desde admin
           light: '#E8F0FF',   // Azul Claro (fondos)
         },
         status: {

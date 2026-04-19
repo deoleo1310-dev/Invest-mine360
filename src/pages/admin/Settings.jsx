@@ -42,7 +42,8 @@ export default function AdminSettings() {
     // Ensure numbers are numbers
     const payload = {
       ...formData,
-      default_rate_value: Number(formData.default_rate_value)
+      default_rate_value: Number(formData.default_rate_value),
+      updated_at: new Date().toISOString()
     };
 
     const result = await updateSettings(payload);
@@ -153,7 +154,7 @@ export default function AdminSettings() {
             <h3 className="text-lg font-semibold">Tasas y Finanzas</h3>
           </div>
           <p className="text-sm text-neutral-gray mb-4">
-            Esta es la tasa **por defecto** que se mostrará y utilizará para los clientes nuevos. 
+            Esta es la tasa <strong>por defecto</strong> que se utilizará para los clientes nuevos. 
             El servidor automáticamente la convertirá a tasa diaria para los cálculos internos.
           </p>
           

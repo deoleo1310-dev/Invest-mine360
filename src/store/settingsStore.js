@@ -4,11 +4,11 @@ import { supabase } from '../lib/supabaseClient';
 export const useSettingsStore = create((set, get) => ({
   settings: {
     app_name: 'Mine360pr',
-    paypal_link: 'https://paypal.me/',
+    paypal_link: '',
     whatsapp_link: '',
-    primary_color: '#3b82f6',
-    secondary_color: '#1e40af',
-    default_rate_value: 10,
+    primary_color: '#1464F4',
+    secondary_color: '#0A2A6E',
+    default_rate_value: 15,
     default_rate_period: 'mensual'
   },
   loading: false,

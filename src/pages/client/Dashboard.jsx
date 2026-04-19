@@ -9,60 +9,9 @@ import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus, AlertTriangle, 
 import { differenceInDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useToast } from '../../context/ToastContext';
+import { useSettingsStore } from '../../store/settingsStore';
 
-class DataCache {
-  constructor(ttl = 30000) {
-    this.cache = new Map();
-    this.pendingRequests = new Map();
-    this.ttl = ttl;
-  }
-
-  get(key) {
-    const cached = this.cache.get(key);
-    if (!cached) return null;
-    
-    if (Date.now() - cached.timestamp > this.ttl) {
-      this.cache.delete(key);
-      return null;
-    }
-    
-    return cached.data;
-  }
-
-  set(key, data) {
-    this.cache.set(key, { data, timestamp: Date.now() });
-  }
-
-  async getOrFetch(key, fetchFn) {
-    const cached = this.get(key);
-    if (cached) return cached;
-
-    if (this.pendingRequests.has(key)) {
-      return this.pendingRequests.get(key);
-    }
-
-    const promise = fetchFn()
-      .then(data => {
-        this.set(key, data);
-        this.pendingRequests.delete(key);
-        return data;
-      })
-      .catch(err => {
-        this.pendingRequests.delete(key);
-        throw err;
-      });
-
-    this.pendingRequests.set(key, promise);
-    return promise;
-  }
-
-  invalidate(key) {
-    this.cache.delete(key);
-    this.pendingRequests.delete(key);
-  }
-}
-
-const clientCache = new DataCache(30000);
+import { clientCache } from '../../lib/dataCache';
 
 export default function ClientDashboard() {
   const { user } = useAuth();
@@ -260,10 +209,14 @@ export default function ClientDashboard() {
     }
   };
 
+  const paypalLink = useSettingsStore(s => s.settings.paypal_link);
+
   const handleInvestClick = useCallback(() => {
     alert("Por favor enviar el comprobante de pago al WhatsApp del administrador");
-    window.open('https://www.paypal.com/paypalme/DevonBrantPierre2025', '_blank');
-  }, []);
+    if (paypalLink) {
+      window.open(paypalLink, '_blank');
+    }
+  }, [paypalLink]);
 
   if (loading) {
     return (
