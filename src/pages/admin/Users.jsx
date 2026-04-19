@@ -8,6 +8,8 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Plus, Pencil, TrendingUp, Loader2, Eye, EyeOff, Lock, AlertCircle, Trash2, Zap, Calendar } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { ConfirmModal } from '../../components/ui/ConfirmModal';
+import { UserCardSkeleton } from '../../components/ui/Skeleton';
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
@@ -20,6 +22,7 @@ export default function AdminUsers() {
   const [deletingUserId, setDeletingUserId] = useState(null);
   const [generatingEarnings, setGeneratingEarnings] = useState(false);
   const { showSuccess, showError, showInfo } = useToast();
+  const [confirmModal, setConfirmModal] = useState({ open: false, type: null, data: null });
   
   const [formData, setFormData] = useState({
     full_name: '',
@@ -69,10 +72,7 @@ export default function AdminUsers() {
   }, []);
 
   const handleGenerateEarnings = async () => {
-    if (!confirm('¿Generar las ganancias del día para TODOS los usuarios?\n\nEsta acción solo puede hacerse UNA VEZ por día.')) {
-      return;
-    }
-
+    setConfirmModal({ open: false, type: null, data: null });
     setGeneratingEarnings(true);
 
     try {
@@ -137,10 +137,7 @@ export default function AdminUsers() {
   };
 
   const handleDeleteUser = async (userId, userName) => {
-    if (!confirm(`¿Estás seguro de eliminar a ${userName}?\n\nEsta acción NO se puede deshacer y eliminará:\n- Su perfil\n- Su inversión\n- Todos sus retiros\n- Todas sus ganancias generadas\n\n¿Continuar?`)) {
-      return;
-    }
-
+    setConfirmModal({ open: false, type: null, data: null });
     setDeletingUserId(userId);
 
     try {
@@ -361,7 +358,11 @@ export default function AdminUsers() {
         
         <div className="flex gap-2">
           <Button 
-            onClick={handleGenerateEarnings}
+            onClick={() => setConfirmModal({ 
+              open: true, 
+              type: 'earnings', 
+              data: null 
+            })}
             disabled={generatingEarnings}
             className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
           >
@@ -385,9 +386,7 @@ export default function AdminUsers() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center p-10">
-          <Loader2 className="animate-spin text-primary" size={40} />
-        </div>
+        <UserCardSkeleton />
       ) : users.length === 0 ? (
         <Card className="text-center py-10">
           <p className="text-neutral-gray">No hay clientes registrados aún</p>
@@ -400,7 +399,11 @@ export default function AdminUsers() {
           {users.map((user) => (
             <Card key={user.id} className="relative">
               <button 
-                onClick={() => handleDeleteUser(user.id, user.full_name)}
+                onClick={() => setConfirmModal({ 
+                  open: true, 
+                  type: 'delete', 
+                  data: { id: user.id, name: user.full_name } 
+                })}
                 disabled={deletingUserId === user.id}
                 className="absolute top-4 right-14 text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-full transition-colors disabled:opacity-50"
                 title="Eliminar usuario"
@@ -624,6 +627,28 @@ export default function AdminUsers() {
           </Button>
         </div>
       </Modal>
+
+      {/* Confirm Modals */}
+      <ConfirmModal
+        isOpen={confirmModal.open && confirmModal.type === 'earnings'}
+        onClose={() => setConfirmModal({ open: false, type: null, data: null })}
+        onConfirm={handleGenerateEarnings}
+        title="Generar Ganancias del Día"
+        message={"¿Generar las ganancias del día para TODOS los usuarios?\n\nEsta acción solo puede hacerse UNA VEZ por día."}
+        confirmText="Generar Ganancias"
+        variant="success"
+        loading={generatingEarnings}
+      />
+
+      <ConfirmModal
+        isOpen={confirmModal.open && confirmModal.type === 'delete'}
+        onClose={() => setConfirmModal({ open: false, type: null, data: null })}
+        onConfirm={() => handleDeleteUser(confirmModal.data?.id, confirmModal.data?.name)}
+        title={`¿Eliminar a ${confirmModal.data?.name}?`}
+        message={"Esta acción NO se puede deshacer y eliminará:\n• Su perfil\n• Su inversión\n• Todos sus retiros\n• Todas sus ganancias generadas"}
+        confirmText="Eliminar Usuario"
+        variant="danger"
+      />
     </div>
   );
 }

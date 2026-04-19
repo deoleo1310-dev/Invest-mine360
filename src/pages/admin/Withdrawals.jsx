@@ -8,33 +8,9 @@ import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { RejectModal } from '../../components/ui/RejectModal';
-
-class WithdrawalCache {
-  constructor(ttl = 300000) {
-    this.cache = null;
-    this.timestamp = null;
-    this.ttl = ttl;
-  }
-
-  get() {
-    if (!this.cache || Date.now() - this.timestamp > this.ttl) {
-      return null;
-    }
-    return this.cache;
-  }
-
-  set(data) {
-    this.cache = data;
-    this.timestamp = Date.now();
-  }
-
-  invalidate() {
-    this.cache = null;
-    this.timestamp = null;
-  }
-}
-
-const cache = new WithdrawalCache();
+import { ConfirmModal } from '../../components/ui/ConfirmModal';
+import { withdrawalCache } from '../../lib/dataCache';
+import { WithdrawalCardSkeleton } from '../../components/ui/Skeleton';
 
 export default function AdminWithdrawals() {
   const [withdrawals, setWithdrawals] = useState([]);
@@ -44,22 +20,22 @@ export default function AdminWithdrawals() {
   const { showSuccess, showError, showInfo } = useToast();
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [withdrawalToReject, setWithdrawalToReject] = useState(null);
+  const [approveModal, setApproveModal] = useState({ open: false, withdrawal: null, balance: null, requested: null });
 
   const loadData = async (useCache = true) => {
     try {
       setLoading(true);
 
       if (useCache) {
-        const cached = cache.get();
+        const cached = withdrawalCache.get('withdrawals');
         if (cached) {
-          console.log('📦 Usando datos en caché');
           setWithdrawals(cached);
           setLoading(false);
           return;
         }
       }
 
-      console.log('🔄 Cargando datos desde Supabase...');
+
 
       const { data, error } = await supabase
         .rpc('get_withdrawals_with_balances');
@@ -83,7 +59,7 @@ export default function AdminWithdrawals() {
         }
       }));
 
-      cache.set(transformed);
+      withdrawalCache.set('withdrawals', transformed);
       setWithdrawals(transformed);
     } catch (error) {
       console.error('❌ Load error:', error);
@@ -97,7 +73,6 @@ export default function AdminWithdrawals() {
     loadData(true);
 
     const interval = setInterval(() => {
-      console.log('🔄 Recarga automática...');
       loadData(false);
     }, 30000);
 
@@ -130,7 +105,7 @@ export default function AdminWithdrawals() {
   };
 
   // ✅ MEJORADO: Validación en tiempo real antes de aprobar
-  const handleApprove = async (withdrawal) => {
+  const handleApproveClick = async (withdrawal) => {
     setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'checking' }));
 
     try {
@@ -139,18 +114,11 @@ export default function AdminWithdrawals() {
       const available = Number(latestBalance.availableBalance);
       const requested = Number(withdrawal.monto);
 
-      console.log('💰 Balance actualizado:', {
-        available,
-        requested,
-        withdrawalId: withdrawal.id
-      });
-
       // ✅ PASO 2: Validar con datos frescos
       if (requested > available) {
         showError(
           `❌ FONDOS INSUFICIENTES\n\n` +
           `Usuario: ${withdrawal.profiles?.full_name}\n` +
-          `Ganancias generadas: $${latestBalance.totalEarnings.toFixed(2)}\n` +
           `Disponible actual: $${available.toFixed(2)}\n` +
           `Solicitado: $${requested.toFixed(2)}\n` +
           `Faltante: $${(requested - available).toFixed(2)}\n\n` +
@@ -164,25 +132,33 @@ export default function AdminWithdrawals() {
         return;
       }
 
-      // ✅ PASO 3: Confirmar con el admin
-      const confirmMsg = 
-        `¿Aprobar retiro de $${requested.toFixed(2)}?\n\n` +
-        `Usuario: ${withdrawal.profiles?.full_name}\n` +
-        `Balance disponible: $${available.toFixed(2)}\n` +
-        `Nuevo balance: $${(available - requested).toFixed(2)}`;
+      // ✅ PASO 3: Abrir Modal
+      setApproveModal({
+        open: true,
+        withdrawal,
+        balance: available,
+        requested: requested
+      });
 
-      if (!confirm(confirmMsg)) {
-        setActionLoading(prev => {
-          const copy = { ...prev };
-          delete copy[withdrawal.id];
-          return copy;
-        });
-        return;
-      }
+    } catch (error) {
+      console.error('Approve check error:', error);
+      showError('Error al verificar balance: ' + error.message);
+      setActionLoading(prev => {
+        const copy = { ...prev };
+        delete copy[withdrawal.id];
+        return copy;
+      });
+    }
+  };
 
-      // ✅ PASO 4: Aprobar (el trigger de BD hará la validación final)
-      setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'approving' }));
+  const handleApproveConfirm = async () => {
+    const { withdrawal, requested } = approveModal;
+    
+    // Ocultar modal pero mantener el loading
+    setApproveModal({ open: false, withdrawal: null, balance: null, requested: null });
+    setActionLoading(prev => ({ ...prev, [withdrawal.id]: 'approving' }));
 
+    try {
       const { error } = await supabase
         .from('withdrawals')
         .update({ 
@@ -192,7 +168,6 @@ export default function AdminWithdrawals() {
         .eq('id', withdrawal.id);
 
       if (error) {
-        // ✅ Si el trigger rechazó, mostramos el error
         if (error.message.includes('FONDOS INSUFICIENTES')) {
           showError('⚠️ El retiro fue rechazado por fondos insuficientes (validación de BD)');
         } else {
@@ -207,7 +182,7 @@ export default function AdminWithdrawals() {
         `Usuario: ${withdrawal.profiles?.full_name}`
       );
       
-      cache.invalidate();
+      withdrawalCache.invalidate('withdrawals');
       await loadData(false);
     } catch (error) {
       console.error('Approve error:', error);
@@ -239,7 +214,7 @@ export default function AdminWithdrawals() {
       if (error) throw error;
 
       showInfo(`Retiro de $${withdrawal.monto} rechazado`);
-      cache.invalidate();
+      withdrawalCache.invalidate('withdrawals');
       await loadData(false);
       
       setRejectModalOpen(false);
@@ -324,9 +299,7 @@ export default function AdminWithdrawals() {
 
       {/* LOADING */}
       {loading ? (
-        <div className="flex justify-center p-10">
-          <Loader2 className="animate-spin text-primary" size={40} />
-        </div>
+        <WithdrawalCardSkeleton />
       ) : (
         <div className="space-y-4">
 
@@ -395,7 +368,7 @@ export default function AdminWithdrawals() {
                     <Button 
                       variant="success" 
                       className="p-2 rounded-full w-10 h-10" 
-                      onClick={() => handleApprove(w)}
+                      onClick={() => handleApproveClick(w)}
                       disabled={actionLoading[w.id]}
                       title="Aprobar (validará balance en tiempo real)"
                     >
@@ -440,6 +413,26 @@ export default function AdminWithdrawals() {
         }}
         onConfirm={handleRejectConfirm}
         withdrawal={withdrawalToReject}
+      />
+
+      <ConfirmModal
+        isOpen={approveModal.open}
+        onClose={() => {
+          setActionLoading(prev => {
+            const copy = { ...prev };
+            if (approveModal.withdrawal?.id) {
+              delete copy[approveModal.withdrawal.id];
+            }
+            return copy;
+          });
+          setApproveModal({ open: false, withdrawal: null, balance: null, requested: null });
+        }}
+        onConfirm={handleApproveConfirm}
+        title={`¿Aprobar retiro de $${approveModal.requested?.toFixed(2)}?`}
+        message={approveModal.withdrawal ? `Usuario: ${approveModal.withdrawal.profiles?.full_name}\nBalance disponible: $${approveModal.balance?.toFixed(2)}\nNuevo balance: $${(approveModal.balance - approveModal.requested)?.toFixed(2)}` : ''}
+        confirmText="Aprobar Pago"
+        cancelText="Cancelar"
+        variant="success"
       />
     </div>
   );

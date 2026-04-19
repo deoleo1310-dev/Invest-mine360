@@ -85,7 +85,7 @@ const Toast = ({ toast, onRemove }) => {
       <div className="flex-shrink-0 mt-0.5">
         {icons[toast.type]}
       </div>
-      <p className="flex-1 text-sm text-gray-800 font-medium">
+      <p className="flex-1 text-sm text-gray-800 font-medium whitespace-pre-line">
         {toast.message}
       </p>
       <button

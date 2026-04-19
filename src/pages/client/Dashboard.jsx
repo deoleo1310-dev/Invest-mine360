@@ -5,13 +5,15 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus, AlertTriangle, CreditCard, Info } from 'lucide-react';
+import { TrendingUp, DollarSign, Clock, Loader2, Calendar, Plus, AlertTriangle, CreditCard, Info, ExternalLink } from 'lucide-react';
 import { differenceInDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useToast } from '../../context/ToastContext';
 import { useSettingsStore } from '../../store/settingsStore';
 
 import { clientCache } from '../../lib/dataCache';
+import { Modal } from '../../components/ui/Modal';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
 
 export default function ClientDashboard() {
   const { user } = useAuth();
@@ -24,7 +26,8 @@ export default function ClientDashboard() {
   const [totalEarnings, setTotalEarnings] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [withdrawalLimit, setWithdrawalLimit] = useState(null); // ✅ NUEVO
+  const [withdrawalLimit, setWithdrawalLimit] = useState(null);
+  const [showInvestModal, setShowInvestModal] = useState(false);
 
   const fetchClientData = useCallback(async (userId) => {
     return clientCache.getOrFetch(userId, async () => {
@@ -210,23 +213,14 @@ export default function ClientDashboard() {
   };
 
   const paypalLink = useSettingsStore(s => s.settings.paypal_link);
+  const whatsappLink = useSettingsStore(s => s.settings.whatsapp_link);
 
   const handleInvestClick = useCallback(() => {
-    alert("Por favor enviar el comprobante de pago al WhatsApp del administrador");
-    if (paypalLink) {
-      window.open(paypalLink, '_blank');
-    }
-  }, [paypalLink]);
+    setShowInvestModal(true);
+  }, []);
 
   if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-neutral-gray">Cargando tu inversión...</p>
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (!investment) {
@@ -246,6 +240,7 @@ export default function ClientDashboard() {
   }
 
   return (
+    <>
     <div className="space-y-8 max-w-5xl mx-auto">
       <section>
         <div className="flex items-center justify-between mb-4">
@@ -484,5 +479,51 @@ export default function ClientDashboard() {
         </section>
       </div>
     </div>
+
+    {/* Modal Invertir Más */}
+    <Modal
+      isOpen={showInvestModal}
+      onClose={() => setShowInvestModal(false)}
+      title="💰 Aumentar tu Inversión"
+    >
+      <div className="space-y-4">
+        <div className="bg-primary-light/30 p-4 rounded-lg border border-primary-light">
+          <p className="text-sm text-neutral-text leading-relaxed">
+            Para aumentar tu inversión, realiza el pago a través de PayPal y envía el comprobante al administrador por WhatsApp.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {paypalLink && (
+            <a
+              href={paypalLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full bg-[#0070BA] hover:bg-[#005EA6] text-white font-semibold py-3 rounded-lg transition-colors"
+            >
+              <ExternalLink size={18} />
+              Ir a PayPal
+            </a>
+          )}
+
+          {whatsappLink && (
+            <a
+              href={whatsappLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full bg-[#25D366] hover:bg-[#1DA851] text-white font-semibold py-3 rounded-lg transition-colors"
+            >
+              <ExternalLink size={18} />
+              Enviar Comprobante por WhatsApp
+            </a>
+          )}
+        </div>
+
+        <p className="text-xs text-neutral-gray text-center">
+          Tu inversión será actualizada una vez el administrador confirme el pago.
+        </p>
+      </div>
+    </Modal>
+  </>
   );
 }

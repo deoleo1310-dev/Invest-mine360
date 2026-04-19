@@ -23,30 +23,31 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let mounted = true;
     let sessionTimeout = null;
+    let finalTimeout = null;
 
     const initSession = async () => {
       try {
         
-      // ✅ MEJOR: Aumentar timeout y mejorar ux, 10 segundos de seccion.
-sessionTimeout = setTimeout(() => {
-  if (mounted) {
-    console.warn('⏱️ Cargando sesión tomando más tiempo...');
-    // Mostrar mensaje pero NO cerrar sesión aún
-  }
-}, 5000);
+      // Aviso de lentitud a los 5 segundos
+      sessionTimeout = setTimeout(() => {
+        if (mounted) {
+          console.warn('⏱️ Cargando sesión tomando más tiempo...');
+        }
+      }, 5000);
 
-// Timeout definitivo a los 10 segundos
-const finalTimeout = setTimeout(() => {
-  if (mounted) {
-    setUser(null);
-    setLoading(false);
-  }
-}, 10000);
+      // Timeout definitivo a los 10 segundos
+      finalTimeout = setTimeout(() => {
+        if (mounted) {
+          setUser(null);
+          setLoading(false);
+        }
+      }, 10000);
 
         // ✅ USAR getSession() en lugar de getUser() (más rápido)
         const { data: { session }, error } = await supabase.auth.getSession();
 
         clearTimeout(sessionTimeout);
+        clearTimeout(finalTimeout);
 
         if (error || !session?.user) {
           if (mounted) {
@@ -78,7 +79,6 @@ const finalTimeout = setTimeout(() => {
             });
           }
         } catch (profileError) {
-          console.warn('Error cargando perfil:', profileError);
           if (mounted) {
             setUser({
               ...session.user,
@@ -88,11 +88,11 @@ const finalTimeout = setTimeout(() => {
           }
         }
       } catch (error) {
-        console.error('Error de autenticación:', error);
         if (mounted) setUser(null);
       } finally {
         if (mounted) {
           clearTimeout(sessionTimeout);
+          clearTimeout(finalTimeout);
           setLoading(false);
         }
       }
@@ -132,6 +132,7 @@ const finalTimeout = setTimeout(() => {
     return () => {
       mounted = false;
       if (sessionTimeout) clearTimeout(sessionTimeout);
+      if (finalTimeout) clearTimeout(finalTimeout);
       subscription?.unsubscribe();
     };
   }, []);
