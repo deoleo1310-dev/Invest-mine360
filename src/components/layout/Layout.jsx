@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { LogOut, Users, DollarSign, TrendingUp } from 'lucide-react';
+import { LogOut, Users, DollarSign, TrendingUp, Settings } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export const Layout = ({ children }) => {
@@ -74,6 +74,7 @@ export const Layout = ({ children }) => {
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-border flex justify-around items-center py-2 px-4 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
           <NavItem to="/admin" icon={Users} label="Usuarios" />
           <NavItem to="/admin/withdrawals" icon={DollarSign} label="Retiros" />
+          <NavItem to="/admin/settings" icon={Settings} label="Ajustes" />
         </nav>
       ) : (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-border flex justify-center items-center py-2 px-4 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">

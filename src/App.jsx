@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { Loader2 } from 'lucide-react';
+import { useSettingsStore } from './store/settingsStore';
+import { useEffect } from 'react';
 
 
 import { Layout } from './components/layout/Layout';
@@ -11,6 +13,7 @@ import { Layout } from './components/layout/Layout';
 const Login = lazy(() => import('./pages/Login'));
 const AdminUsers = lazy(() => import('./pages/admin/Users'));
 const AdminWithdrawals = lazy(() => import('./pages/admin/Withdrawals'));
+const AdminSettings = lazy(() => import('./pages/admin/Settings'));
 const ClientDashboard = lazy(() => import('./pages/client/Dashboard'));
 
 
@@ -47,6 +50,12 @@ const ProtectedRoute = ({ children, role }) => {
 };
 
 function App() {
+  const fetchSettings = useSettingsStore(state => state.fetchSettings);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
   return (
     <ToastProvider>
       <AuthProvider>
@@ -70,6 +79,15 @@ function App() {
                 element={
                   <ProtectedRoute role="admin">
                     <AdminWithdrawals />
+                  </ProtectedRoute>
+                } 
+              />
+
+              <Route 
+                path="/admin/settings" 
+                element={
+                  <ProtectedRoute role="admin">
+                    <AdminSettings />
                   </ProtectedRoute>
                 } 
               />
